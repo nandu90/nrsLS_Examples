@@ -1,0 +1,28 @@
+[GENERAL]
+polynomialOrder = 7
+stopAt = endTime
+endTime = 50
+dt = 5e-02
+timeStepper = tombo2
+
+checkpointControl = simulationTime 
+checkpointInterval = 50
+
+[PROBLEMTYPE]
+equation = navierStokes
+
+[PRESSURE]
+residualTol = 1e-04
+
+[VELOCITY]
+solver = none
+boundaryTypeMap = O 
+residualTol = 1e-06
+rho = 1.0
+viscosity = 1e-10 
+
+[SCALAR00]
+boundaryTypeMap = I
+residualTol = 1e-08
+rho = 1.0
+diffusivity = 1e-10 

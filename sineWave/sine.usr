@@ -1,0 +1,34 @@
+      subroutine usrdat2()  ! This routine to modify mesh coordinates
+      include 'SIZE'
+      include 'TOTAL'
+
+      do iel=1,nelt
+         cbc(5,iel,1) = 'P  '
+         cbc(6,iel,1) = 'P  '
+      do ifc=1,2*ndim
+         cbc(ifc,iel,2)  = cbc(ifc,iel,1)
+         if (cbc(ifc,iel,1) .eq. 'O  ') cbc(ifc,iel,2) = 'I  ' 
+         if (cbc(ifc,iel,1) .eq. 'O  ') boundaryID(ifc,iel) = 1
+         if (cbc(ifc,iel,1) .eq. 'O  ') boundaryIDt(ifc,iel) = 1
+      enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrsetvert(glo_num,nel,nx,ny,nz) ! to modify glo_num
+      integer*8 glo_num(1)
+
+      ! kludge for periodic bc in z
+      nxy  = nx*ny
+      nxyz = nx*ny*nz
+      do iel = 1,nel
+         ioff = nxyz*(iel-1)
+         do ixy = 1,nxy
+            glo_num(ioff + nxy*(nz-1) + ixy) = glo_num(ioff + ixy)
+         enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
