@@ -1,10 +1,12 @@
-#include "svv.hpp"
+#include "plugins/svv.hpp"
 
 #ifdef __okl__
 
 #include "sine.oudf"
 
 #endif
+
+static bool if2P = false;
 
 
 void userq(double time)
@@ -24,7 +26,7 @@ void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
   {
     auto props = kernelInfo;
     props.define("p_sigma_k") = 0.6;
-    RANSktau::buildKernel(props);
+    svv::buildKernel(props);
   }
 #endif
 }
@@ -45,17 +47,10 @@ void UDF_Setup()
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     auto cds = nrs->cds;
-    for(int n = 0; n < mesh->Nlocal; n++) {
-      U[n + 0 * nrs->fieldOffset] = 1;
-      U[n + 1 * nrs->fieldOffset] = 0;
-      U[n + 2 * nrs->fieldOffset] = 0;
-      s0[n] = 1.0;
-    }
-    nrs->o_U.copyFrom(U.data(), U.size());
-    nrs->cds->o_S.copyFrom(s0.data(), s0.size(), cds->fieldOffsetScan[0]); 
+    udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, nrs->o_U, cds->o_S);
   }
 
-  RANSktau::setup(ktauFieldStart);
+  svv::setup(if2P);
 }
 
 void UDF_ExecuteStep(double time, int tstep)

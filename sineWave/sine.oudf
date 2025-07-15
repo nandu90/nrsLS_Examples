@@ -1,0 +1,14 @@
+@kernel void udfic(const dlong N,
+                   const dlong offset,
+                   @ restrict const dfloat *x,
+                   @ restrict dfloat *U,
+                   @ restrict dfloat *s)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    U[n + 0 * offset] = 1.0;
+    U[n + 1 * offset] = 0.0;
+    U[n + 2 * offset] = 0.0;
+
+    s[n] = p_PI * x[n];
+  }
+}

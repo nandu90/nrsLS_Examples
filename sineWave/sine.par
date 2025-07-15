@@ -1,12 +1,12 @@
 [GENERAL]
 polynomialOrder = 7
-stopAt = endTime
-endTime = 50
+stopAt = numSteps
+numSteps = 0
 dt = 5e-02
 timeStepper = tombo2
 
-checkpointControl = simulationTime 
-checkpointInterval = 50
+checkPointControl = simulationTime 
+checkPointInterval = 50
 
 [PROBLEMTYPE]
 equation = navierStokes
@@ -18,7 +18,7 @@ residualTol = 1e-04
 solver = none
 boundaryTypeMap = O 
 residualTol = 1e-06
-rho = 1.0
+density = 1.0
 viscosity = 1e-10 
 
 [SCALAR00]
