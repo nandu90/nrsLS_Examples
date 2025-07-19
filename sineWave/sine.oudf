@@ -9,6 +9,6 @@
     U[n + 1 * offset] = 0.0;
     U[n + 2 * offset] = 0.0;
 
-    s[n] = p_PI * x[n];
+    s[n] = sin(p_PI * x[n]);
   }
 }

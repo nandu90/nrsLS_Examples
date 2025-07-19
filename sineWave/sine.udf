@@ -55,6 +55,7 @@ void UDF_Setup()
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if (nrs->checkpointStep) {
+  if (tstep == 0) {
+    nrs->writeCheckpoint(time, tstep);
   }
 }

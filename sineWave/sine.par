@@ -1,12 +1,12 @@
 [GENERAL]
 polynomialOrder = 7
-stopAt = numSteps
-numSteps = 0
-dt = 5e-02
+stopAt = endTime
+endTime = 0
+dt = 1e-04
 timeStepper = tombo2
 
 checkPointControl = simulationTime 
-checkPointInterval = 50
+checkPointInterval = 0.2
 
 [PROBLEMTYPE]
 equation = navierStokes
