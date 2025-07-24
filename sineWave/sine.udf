@@ -55,8 +55,9 @@ void UDF_Setup()
 
 void UDF_ExecuteStep(double time, int tstep)
 {
+  svv::solverSetup();
+
   if (tstep == 0) {
     nrs->writeCheckpoint(time, tstep);
   }
-  /* svv::solve(); */
 }
