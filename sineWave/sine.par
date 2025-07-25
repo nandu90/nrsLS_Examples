@@ -1,3 +1,6 @@
+[OCCA]
+backend = serial
+
 [GENERAL]
 polynomialOrder = 7
 stopAt = endTime
