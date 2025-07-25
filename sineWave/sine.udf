@@ -42,9 +42,6 @@ void UDF_Setup()
 
   auto mesh = nrs->mesh;
 
-  std::vector<dfloat> U(mesh->dim * nrs->fieldOffset, 0.0);
-  std::vector<dfloat> s0(mesh->Nlocal, 0.0);
-
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     auto cds = nrs->cds;
     udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, nrs->o_U, cds->o_S);

@@ -9,6 +9,8 @@
     U[n + 1 * offset] = 0.0;
     U[n + 2 * offset] = 0.0;
 
-    s[n] = sin(p_PI * x[n]);
+    const dfloat soln = sin(p_PI * x[n]);
+    s[n + 0 * offset] = soln;
+    s[n + 1 * offset] = soln;
   }
 }

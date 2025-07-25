@@ -1,6 +1,6 @@
 base.rea
 -3                     spatial dimension  ( < 0 --> generate .rea/.re2 pair)
-2                      number of fields
+3                      number of fields
 #=======================================================================
 #
 #    Example of .box file for Taylor-Green
@@ -20,4 +20,5 @@ Box
 0 0.5 1.                                               y0,y1,gain  (rescaled in usrdat)
 0 0.5 1.                                               z0,z1,gain
 P  ,P  ,O  ,O  ,P  ,P                                bc's  (3 chars each!)
+P  ,P  ,I  ,I  ,P  ,P                                bc's  (3 chars each!)
 P  ,P  ,I  ,I  ,P  ,P                                bc's  (3 chars each!)

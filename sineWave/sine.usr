@@ -4,11 +4,7 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
 
       do iel=1,nelt
-         cbc(5,iel,1) = 'P  '
-         cbc(6,iel,1) = 'P  '
       do ifc=1,2*ndim
-         cbc(ifc,iel,2)  = cbc(ifc,iel,1)
-         if (cbc(ifc,iel,1) .eq. 'O  ') cbc(ifc,iel,2) = 'I  ' 
          if (cbc(ifc,iel,1) .eq. 'O  ') boundaryID(ifc,iel) = 1
          if (cbc(ifc,iel,1) .eq. 'O  ') boundaryIDt(ifc,iel) = 1
       enddo
