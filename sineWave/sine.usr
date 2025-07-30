@@ -13,19 +13,3 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
-      subroutine usrsetvert(glo_num,nel,nx,ny,nz) ! to modify glo_num
-      integer*8 glo_num(1)
-
-      ! kludge for periodic bc in z
-      nxy  = nx*ny
-      nxyz = nx*ny*nz
-      do iel = 1,nel
-         ioff = nxyz*(iel-1)
-         do ixy = 1,nxy
-            glo_num(ioff + nxy*(nz-1) + ixy) = glo_num(ioff + ixy)
-         enddo
-      enddo
-
-      return
-      end
-c-----------------------------------------------------------------------
