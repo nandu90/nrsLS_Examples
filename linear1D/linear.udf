@@ -1,0 +1,53 @@
+#include "plugins/svv.hpp"
+
+#ifdef __okl__
+
+#include "linear.oudf"
+
+#endif
+
+static bool if2P = false;
+
+
+void userq(double time)
+{
+}
+
+void uservp(double time)
+{
+  auto mesh = nrs->mesh;
+  auto cds = nrs->cds;
+
+}
+
+void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
+{
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userScalarSource = &userq;
+
+  auto mesh = nrs->mesh;
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto cds = nrs->cds;
+    udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, nrs->o_U, cds->o_S);
+  }
+
+  svv::setup(if2P);
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  svv::solverSetup();
+
+  if (tstep == 0) {
+    nrs->writeCheckpoint(time, tstep);
+  }
+}
