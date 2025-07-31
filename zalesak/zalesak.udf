@@ -1,0 +1,83 @@
+#include "plugins/svv.hpp"
+
+#ifdef __okl__
+
+#include "zalesak.oudf"
+
+#endif
+
+static bool if2P = false;
+
+
+void userq(double time)
+{
+}
+
+void uservp(double time)
+{
+  auto mesh = nrs->mesh;
+  auto cds = nrs->cds;
+
+}
+
+void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
+{
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userScalarSource = &userq;
+
+  auto mesh = nrs->mesh;
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto cds = nrs->cds;
+
+    //Average element length
+    auto o_EX = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EX);
+    auto o_EY = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EY);
+    auto o_EZ = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EZ);
+
+    auto o_deltael = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+
+    deltaElement(mesh->Nelements, o_EX, o_EY, o_EZ, o_deltael);
+
+    std::vector<dfloat> tmp(mesh->Nelements);
+    o_deltael.copyTo(tmp.data());
+
+    dfloat deltael = 0.0;
+    for (dlong i = 0; i < mesh->Nelements; i++) {
+       deltael += tmp[i];
+    }
+
+    MPI_Allreduce(MPI_IN_PLACE, &deltael, 1, MPI_DFLOAT, MPI_SUM, platform->comm.mpiComm);
+
+    dlong N = mesh->Nelements;
+    MPI_Allreduce(MPI_IN_PLACE, &N, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm);
+
+    deltael /= N;
+
+    deltael = 1./50.;
+
+    udfic(mesh->Nlocal, nrs->fieldOffset, deltael, mesh->o_x, mesh->o_y, nrs->o_U, cds->o_S);
+
+    if(platform->comm.mpiRank == 0)
+      printf("Average element length = %.4e\n",deltael);
+  }
+
+  svv::setup(if2P);
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  svv::solverSetup();
+
+  if (tstep == 0) {
+    nrs->writeCheckpoint(time, tstep);
+  }
+}

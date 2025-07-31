@@ -1,0 +1,20 @@
+c-----------------------------------------------------------------------
+      subroutine usrdat2()  ! This routine to modify mesh coordinates
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+
+      integer iel, ifc
+
+      do iel=1,nelt
+      do ifc=1,2*ndim
+         if (cbc(ifc,iel,1) .eq. 'O  ')then
+           boundaryID(ifc,iel) = 1
+           boundaryIDt(ifc,iel) = 1
+         endif
+      enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------

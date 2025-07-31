@@ -1,0 +1,36 @@
+[OCCA]
+backend = serial
+
+[GENERAL]
+polynomialOrder = 3
+stopAt = endTime
+endTime = 2.0
+dt = 1e-4
+timeStepper = tombo2
+
+checkPointControl = simulationTime 
+checkPointInterval = 0.2
+
+#verbose = true
+
+[PROBLEMTYPE]
+equation = navierStokes
+
+[PRESSURE]
+residualTol = 1e-04
+
+[VELOCITY]
+solver = none
+boundaryTypeMap = O
+residualTol = 1e-06
+density = 1.0
+viscosity = 1e-10 
+
+[SCALAR00]
+solver = PGMRES
+boundaryTypeMap = t
+residualTol = 1e-08
+
+[CASEDATA]
+c0_s00 = 0.1
+NSVV_s00 = 2.0

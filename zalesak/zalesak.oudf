@@ -1,0 +1,142 @@
+void codedFixedValueScalar(bcData *bc)
+{
+  bc->s = 0.0;
+}
+
+@kernel void udfic(const dlong N,
+                   const dlong offset,
+                   const dfloat deltael,
+                   @ restrict const dfloat *x,
+                   @ restrict const dfloat *y,
+                   @ restrict dfloat *U,
+                   @ restrict dfloat *s)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat ucx = 0.5;
+    const dfloat ucy = 0.5;
+
+    const dfloat xm1 = x[n];
+    const dfloat ym1 = y[n];
+
+    U[n + 0 * offset] = p_PI * (ucy - ym1);
+    U[n + 1 * offset] = p_PI * (xm1 - ucx);
+    U[n + 2 * offset] = 0.0;
+
+    const dfloat x1 = 0.5;
+    const dfloat y1 = 0.75;
+
+    const dfloat dist = sqrt(pow(xm1-x1,2.0) + pow(ym1-y1,2.0)) - 0.15;
+
+    const dfloat distx = 0.025 - abs(xm1 - 0.5);
+    const dfloat disty = 0.85 - ym1;
+
+    const dfloat phi = - fmax(dist, fmin(distx, disty));
+
+    const dfloat eps_cls = 1.0 / (p_Nq - 1.0);
+
+    const dfloat eps = eps_cls * deltael;
+
+    const dfloat heaviside = 0.5 * (tanh(phi / (2.0 * eps)) + 1.0);
+
+    s[n] = heaviside;
+  }
+}
+
+void rsum(dfloat *s_sum, const dlong t, const dlong bs) {
+  s_sum[t] = s_sum[t] + s_sum[t + bs];
+}
+
+@kernel void deltaElement(const dlong Nelements,
+			 @ restrict const dfloat *EX,
+			 @ restrict const dfloat *EY,
+			 @ restrict const dfloat *EZ,
+			 @ restrict dfloat *deltael)
+{
+  for (dlong e = 0; e < Nelements; e++; @outer(0)) {
+
+    const dlong v1[] = {0,0,1,3,0,1,3,2,4,4,7,5};
+    const dlong v2[] = {1,3,2,2,4,5,7,6,5,7,6,6};
+
+    @shared dfloat s_sum[p_blockSize];
+
+    for (dlong t = 0; t < p_blockSize; t++; @inner(0)) {
+      s_sum[t] = 0.0;
+      if(t < p_Nvgeo){
+        const dlong id1 = e * p_Nverts + v1[t];
+        const dlong id2 = e * p_Nverts + v2[t];
+        const dfloat dx = EX[id1] - EX[id2];
+        const dfloat dy = EY[id1] - EY[id2];
+        const dfloat dz = EZ[id1] - EZ[id2];
+        const dfloat len2 = dx * dx + dy * dy + dz * dz;
+        s_sum[t] = sqrt(len2);
+      }
+    }
+    @barrier();
+
+#if p_blockSize > 512
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 512) {
+        rsum(s_sum, t, 512);
+      }
+    @barrier();
+#endif
+
+#if p_blockSize > 256
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 256) {
+        rsum(s_sum, t, 256);
+      }
+    @barrier();
+#endif
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 128) {
+        rsum(s_sum, t, 128);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 64) {
+        rsum(s_sum, t, 64);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 32) {
+        rsum(s_sum, t, 32);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 16) {
+        rsum(s_sum, t, 16);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 8) {
+        rsum(s_sum, t, 8);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 4) {
+        rsum(s_sum, t, 4);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 2) {
+        rsum(s_sum, t, 2);
+      }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0))
+      if (t < 1) {
+        const dfloat sum = s_sum[0] + s_sum[1];
+
+        deltael[e] = sum / p_Nvgeo;
+      }
+    @barrier();
+  }
+}
