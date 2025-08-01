@@ -36,7 +36,7 @@ solver = PGMRES
 boundaryTypeMap = I
 residualTol = 1e-08
 
-[CASEDATA]
+[TWOPHASE]
 c0_s00 = 0.01
 NSVV_s00 = 2.0
 
