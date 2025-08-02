@@ -2,14 +2,14 @@
 backend = serial
 
 [GENERAL]
-polynomialOrder = 3
+polynomialOrder = 5
 stopAt = endTime
 endTime = 2.0
 dt = 1e-4
 timeStepper = tombo2
 
 checkPointControl = simulationTime 
-checkPointInterval = 0.2
+checkPointInterval = 2.0
 
 #verbose = true
 

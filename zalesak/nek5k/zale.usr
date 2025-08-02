@@ -1,0 +1,235 @@
+      include "experimental/lvlSet.f"
+      include "lineplot.f"
+c-----------------------------------------------------------------------
+      subroutine uservp(ix,iy,iz,eg) ! set variable properties
+      implicit none
+      integer ix,iy,iz,eg,e
+     
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      common /usrvisc/ visc(lx1,ly1,lz1,lelv)
+      real visc
+
+      e = gllel(eg)
+
+      utrans = 1.0
+      udiff = cpfld(ifield,1)
+
+      if(ifavm(ifield-1))then
+        udiff = 1e-20       !must be tiny for hyperbolic
+      elseif(ifsvv(ifield-1))then
+        udiff = 1e-20      !must be tiny for hyperbolic
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf(ix,iy,iz,eg) ! set acceleration term
+      implicit none
+      integer ix,iy,iz,eg,e
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      e = gllel(eg)
+
+      ffx = 0.0
+      ffy = 0.0
+      ffz = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq(ix,iy,iz,eg) ! set source term
+      implicit none
+      integer ix,iy,iz,eg,e
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      e = gllel(eg)
+      
+      qvol   = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc(ix,iy,iz,iside,eg) ! set up boundary conditions
+      implicit none
+      integer ix,iy,iz,iside,eg
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      ux   = 0.0
+      uy   = 0.0
+      uz   = 0.0
+      temp = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric(ix,iy,iz,eg) ! set up initial conditions
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+      
+      integer ix,iy,iz,eg,e
+      real rcen(5,5)
+
+      real thet,ucx,ucy,x1,y1,xlim,ylim
+      real distx,disty,dist
+
+      logical in_slot, below_slot, in_disk
+
+      real heaviside
+      real eps 
+
+      e = gllel(eg)
+
+      ucx = 0.5
+      ucy = 0.5
+
+      ux = (PI)*(ucy-ym1(ix,iy,iz,e))
+      uy = (PI)*(xm1(ix,iy,iz,e)-ucx)
+      uz = 0.0
+
+      x1 = 0.5
+      y1 = 0.75
+
+      x = xm1(ix,iy,iz,e)
+      y = ym1(ix,iy,iz,e)
+
+      dist = sqrt((x-x1)**2.+(y-y1)**2.)-0.15
+
+      in_slot = (abs(x-x1) < 0.025)
+      below_slot = (y < 0.85)
+      in_disk = (dist < 0.0)
+      distx = 0.025 - abs(x - 0.5d0)
+      disty = 0.85 - y
+      
+      temp = dist
+
+      temp = max(dist,min(distx,disty))
+
+      eps = 1.0/(lx1-1)
+
+      temp = heaviside(ix,iy,iz,e,-temp,eps)
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk()
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      real pta(3),ptb(3)
+      real err
+      real exact(lx1,ly1,lz1,lelv)
+
+      real ls_shapeerr,ls_volerr,ls_relerr
+      real enclosedVol
+      integer ifld
+
+      if(istep.eq.nsteps)then
+        pta(1) = 0.0
+        pta(2) = 0.75
+        pta(3) = 0.25
+        ptb(1) = 1.0
+        ptb(2) = 0.75
+        ptb(3) = 0.25
+        call lineplot(pta,ptb,10001)
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userqtl ! Set thermal divergence
+
+      call userqtl_scig 
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat()   ! This routine to modify element vertices
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+
+      ifflow = .false.
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2()  ! This routine to modify mesh coordinates
+      implicit none
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3()
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'AVM'
+      include 'SVV'
+
+c---------------------------------------------------      
+c     This section to specify user defined parameters
+c     for AVM/SVV. Leave commented to use default parameters
+c     parameters. 
+
+c     scalar 0 (temp - off)      
+
+c     scalar 1
+      svv_c0(3) = 0.1
+      svvcut(3) = (lx1-1.0)
+      
+      return
+      end
+c---------------------------------------------------------------------
+      subroutine getexact(exact)
+      include 'SIZE'
+      include 'TOTAL'
+
+      integer ntot,i
+      real xx,yy
+      real x1,y1
+      real dist,distx,disty
+      logical in_slot, below_slot, in_disk
+      real exact(1)
+
+      ntot = lx1*ly1*lz1*nelv
+
+      do i=1,ntot
+        xx = xm1(i,1,1,1)
+        yy = ym1(i,1,1,1)
+
+        x1 = 0.5
+        y1 = 0.75
+
+        dist = sqrt((xx-x1)**2.+(yy-y1)**2.)-0.15
+
+        in_slot = (abs(xx-x1) < 0.025)
+        below_slot = (yy < 0.85)
+        in_disk = (dist < 0.0)
+        distx = 0.025 - abs(xx - 0.5d0)
+        disty = 0.85 - yy
+
+        dist = -max(dist,min(distx,disty))
+
+        exact(i) = 0.0
+        if(dist.ge.0.0)exact(i) = 1.0
+      enddo
+
+      return
+      end
+c---------------------------------------------------------------------
