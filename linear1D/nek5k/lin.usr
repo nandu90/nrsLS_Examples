@@ -1,0 +1,197 @@
+      include "experimental/lvlSet.f"
+      include "lineplot.f"
+c-----------------------------------------------------------------------
+      subroutine uservp(ix,iy,iz,eg) ! set variable properties
+      implicit none
+      integer ix,iy,iz,eg,e
+     
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      common /usrvisc/ visc(lx1,ly1,lz1,lelv)
+      real visc
+      real glmin, glmax
+      real vmin,vmax
+      integer ntot
+
+      e = gllel(eg)
+
+      utrans = 1.0
+      udiff = cpfld(ifield,1)
+
+      if(ifavm(ifield-1))then
+        udiff = 1e-32       !must be tiny for hyperbolic
+      elseif(ifsvv(ifield-1))then
+        udiff = 1e-32      !must be tiny for hyperbolic
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf(ix,iy,iz,eg) ! set acceleration term
+      implicit none
+      integer ix,iy,iz,eg,e
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      e = gllel(eg)
+
+      ffx = 0.0
+      ffy = 0.0
+      ffz = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq(ix,iy,iz,eg) ! set source term
+      implicit none
+      integer ix,iy,iz,eg,e
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      e = gllel(eg)
+      
+      qvol   = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userbc(ix,iy,iz,iside,eg) ! set up boundary conditions
+      implicit none
+      integer ix,iy,iz,iside,eg
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+
+      ux   = 0.0
+      uy   = 0.0
+      uz   = 0.0
+      temp = 0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric(ix,iy,iz,eg) ! set up initial conditions
+      implicit none
+      integer ix,iy,iz,eg,e
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'NEKUSE'
+      
+      real exact
+
+      e = gllel(eg)
+
+      ux = 1.0
+      uy = 0.0
+      uz = 0.0
+
+      !     Initializes Level-set contour field
+      temp = exact(ix,iy,iz,e)
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk()
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+
+      real pta(3),ptb(3)
+      integer i,ntot
+      real exact
+
+      ntot = lx1*ly1*lz1*nelt
+
+      if(istep.eq.nsteps)then
+        pta(1) = 0.0
+        pta(2) = 0.25
+        pta(3) = 0.25
+        ptb(1) = 1.0
+        ptb(2) = 0.25
+        ptb(3) = 0.25
+        call lineplot(pta,ptb,10001)
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userqtl ! Set thermal divergence
+
+      call userqtl_scig 
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat()   ! This routine to modify element vertices
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+
+      ifflow = .false.
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2()  ! This routine to modify mesh coordinates
+      implicit none
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat3()
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'AVM'
+      include 'SVV'
+
+c---------------------------------------------------      
+c     This section to specify user defined parameters
+c     for AVM/SVV. Leave commented to use default parameters
+c     parameters. 
+
+c     scalar 0 (temp - off)      
+      svv_c0(2) = 0.1
+      svvcut(2) = (lx1-1.0)
+
+c     scalar 1
+      svv_c0(3) = 1.0
+      svvcut(3) = (lx1-1.0)
+      
+      return
+      end
+c---------------------------------------------------------------------
+      real function exact(ix,iy,iz,ie)
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+
+      real x1
+      integer ix,iy,iz,ie
+
+      x1 = xm1(ix,iy,iz,ie)
+
+      exact = 0.0
+
+      if(x1 .gt. 0.35 .and. x1 .lt. 0.55)then
+        exact =1.0
+      elseif(x1 .gt. 0.7 .and. x1 .lt. 0.9)then
+        exact = sqrt(1. - ((x1-0.8)/0.1)**2.)
+      elseif(x1 .gt. 0.08 .and. x1 .le. 0.15)then
+        exact = (1./0.0049)*x1**2. - (0.16/0.0049)*x1 + 0.0064/0.0049
+      elseif(x1 .gt. 0.15 .and. x1 .le. 0.22)then
+        exact = (1./0.0049)*x1**2. - (0.44/0.0049)*x1 + 0.0484/0.0049
+      endif
+
+      return
+      end

@@ -1,0 +1,38 @@
+#
+# nek parameter file
+#
+[GENERAL]
+stopAt = numSteps
+#stopAt = endTime
+numSteps =  10000 #200000
+#endTime = 1.0
+
+dt = 1.0e-04
+timeStepper = bdf2
+
+writeControl = runTime
+writeInterval = 1.0
+
+[PROBLEMTYPE]
+variableProperties = yes
+
+[PRESSURE]
+residualTol = 1e-5
+residualProj = yes
+
+[VELOCITY]
+residualTol = 1e-8
+density = 1
+viscosity = -100
+
+[TEMPERATURE]
+rhocp = 1.
+conductivity = 1e-8
+residualTol = 1e-8
+regularization = svv
+
+[SCALAR01]
+density = 1.
+diffusivity = 1e-8
+residualTol = 1e-8
+regularization = svv

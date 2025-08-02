@@ -9,7 +9,7 @@ dt = 1e-4
 timeStepper = tombo2
 
 checkPointControl = simulationTime 
-checkPointInterval = 0.1
+checkPointInterval = 1.0
 
 #verbose = true
 
@@ -37,8 +37,8 @@ boundaryTypeMap = I
 residualTol = 1e-08
 
 [TWOPHASE]
-c0_s00 = 0.01
+c0_s00 = 0.1
 NSVV_s00 = 2.0
 
-c0_s01 = 0.1
+c0_s01 = 1.0
 NSVV_s01 = 2.0
