@@ -15,7 +15,7 @@ c-----------------------------------------------------------------------
       e = gllel(eg)
 
       utrans = 1.0
-      udiff = cpfld(ifield,1)
+      udiff = 1e-20
 
       if(ifavm(ifield-1))then
         udiff = 1e-20       !must be tiny for hyperbolic
@@ -116,11 +116,11 @@ c-----------------------------------------------------------------------
       
       temp = dist
 
-      temp = max(dist,min(distx,disty))
+      temp = - max(dist,min(distx,disty))
 
-      eps = 1.0/(lx1-1)
+      eps = 1.0/(lx1-1.0) * 0.02
 
-      temp = heaviside(ix,iy,iz,e,-temp,eps)
+      temp = 0.5 * (tanh(temp/(2.0*eps)) + 1.0)
 
       pr(ix,iy,iz,e) = temp
       
