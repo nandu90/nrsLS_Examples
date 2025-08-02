@@ -121,6 +121,8 @@ c-----------------------------------------------------------------------
       eps = 1.0/(lx1-1)
 
       temp = heaviside(ix,iy,iz,e,-temp,eps)
+
+      pr(ix,iy,iz,e) = temp
       
       return
       end
@@ -165,12 +167,23 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
 
       ifflow = .false.
+
       return
       end
 c-----------------------------------------------------------------------
       subroutine usrdat2()  ! This routine to modify mesh coordinates
       implicit none
+      include 'SIZE'
+      include 'TOTAL'
 
+      integer ie,ifc
+      do ie=1,nelt
+        do ifc=1,2*ndim
+          if(cbc(ifc,ie,1).eq.'O  ')then
+            cbc(ifc,ie,2) = 't  '
+          endif
+        enddo
+      enddo
       return
       end
 c-----------------------------------------------------------------------
@@ -187,11 +200,9 @@ c     This section to specify user defined parameters
 c     for AVM/SVV. Leave commented to use default parameters
 c     parameters. 
 
-c     scalar 0 (temp - off)      
-
-c     scalar 1
-      svv_c0(3) = 0.1
-      svvcut(3) = (lx1-1.0)
+c     scalar 0
+      svv_c0(2) = 0.1
+      svvcut(2) = (lx1-1.0)
       
       return
       end

@@ -2,7 +2,7 @@
 backend = serial
 
 [GENERAL]
-polynomialOrder = 5
+polynomialOrder = 9
 stopAt = endTime
 endTime = 2.0
 dt = 1e-4
