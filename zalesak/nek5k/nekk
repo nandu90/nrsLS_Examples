@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+if [[ ! -z $5 ]]; then
+  ntpn=$5
+else
+  ntpn=40   #seems to run better this way, still to be checked
+fi
+
+casename="jacket"
+
+echo "submitting job \"$1\" on $2 nodes ($ntpn ppn) for $3 hours and $4 minutes"
+
+echo   "#!/bin/bash"                         >  $1.batch
+echo   "#SBATCH --nodes=$2"                  >> $1.batch
+echo   "#SBATCH --ntasks-per-node=$ntpn"     >> $1.batch
+echo   "#SBATCH --time="$3":"$4":00"         >> $1.batch
+echo   "#SBATCH --output=logfile"            >> $1.batch
+echo   "#SBATCH -p computelarge"                  >> $1.batch
+echo   "echo" $1      ">"  SESSION.NAME      >> $1.batch
+echo   "echo \`pwd\`'/' >> SESSION.NAME"     >> $1.batch
+echo   rm -f  *.sch                          >> $1.batch
+echo   rm -f ioinfo                          >> $1.batch
+echo   "which mpif77 >> logfile"             >> $1.batch                    
+echo   mpirun ./nek5000                      >> $1.batch
+echo   "exit 0;"                             >> $1.batch
+sbatch --job-name=$casename $1.batch
+sleep 3
+squeue -u `whoami`

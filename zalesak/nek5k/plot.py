@@ -40,7 +40,7 @@ def plotnow(fname,xlabel,ylabel,x,y,labels,ptype='line',linestyles=[],markers=[]
             
     ax.grid()
     ax.legend(loc='best',fontsize=12)
-    fig.savefig(fname+'.pdf',\
+    fig.savefig(fname+'.png',\
                 bbox_inches='tight',dpi=100)
     plt.close()
     return
@@ -67,80 +67,34 @@ def getdata(case,t=1):
 
     data = np.loadtxt(case+'/'+tname,skiprows=1)
     x = data[:,0]
-    exact = data[:,5][(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
+    exact = data[:,6][(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
     svv = data[:,7][(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
     x = data[:,0][(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
     return x,exact,svv
 
 def main():
-    N = 'N7'
     xdata = []
     ydata = []
 
-    x,exact,svv = getdata(N+'/0.5')
+    x,exact,svv = getdata('.',t=1)
     xdata.append(x)
     ydata.append(exact)
     xdata.append(x)
     ydata.append(svv)
 
-    x,exact,svv = getdata(N+'/1')
+    data = np.loadtxt('../profile.dat')
+    x = data[:,1]
+    svv = data[:,-1]
+    svv = svv[(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
+    x = x[(np.abs(x) > 0.3) & (np.abs(x) < 0.7)]
     xdata.append(x)
     ydata.append(svv)
 
-    x,exact,svv = getdata(N+'/1.5')
-    xdata.append(x)
-    ydata.append(svv)
-    
-    labels=['Initial','$\\xi=0.5/N$','$\\xi=1/N$','$\\xi=1.5/N$']
-    lines = [':','-.','--','--','-']
+    labels=['Exact','Nek5k','NekRS','$\\xi=1.5/N$']
+    lines = [':','--','--','--','-']
     marks = ['','','','','']
-    plotnow('t2_'+N,'$x$','$\\psi$',xdata,ydata,labels,linestyles=lines,markers=marks)
+    plotnow('t1','$x$','$\\psi$',xdata,ydata,labels,linestyles=lines,markers=marks)
 
-    xdata = []
-    ydata = []
-
-    x,exact,svv = getdata(N+'/0.5',t=100)
-    xdata.append(x)
-    ydata.append(exact)
-    xdata.append(x)
-    ydata.append(svv)
-
-    x,exact,svv = getdata(N+'/1',t=100)
-    xdata.append(x)
-    ydata.append(svv)
-
-    x,exact,svv = getdata(N+'/1.5',t=100)
-    xdata.append(x)
-    ydata.append(svv)
-    
-    plotnow('t20_'+N,'$x$','$\\psi$',xdata,ydata,labels,linestyles=lines,markers=marks)
-
-
-    #Area error calculations:
-    N = np.array((3,5,7,9))
-
-    Er1 = np.array((7.2200829292395874E-006,1.8262476190376729E-006,6.9085870000778151E-007,3.2904548222039053E-007))
-    Es1 = np.array((3.5144359376441045E-002,7.1786639717206482E-004,1.1443024223971193E-003,8.3152584205196250E-004))
-    Evol1 = np.array((1.8725711621016004E-006,1.0287765523985754E-007,4.4158140515546801E-009,1.4468009088457301E-010))
-
-    Er10 = np.array((1.1072803539952668E-005,2.6036545840515836E-006,9.2371511761600062E-007,4.1029463991444877E-007))
-    Es10 = np.array((8.5647080527626096E-002,4.2831329260213822E-003,2.7270374653682954E-003,1.6551785021143683E-003))
-    Evol10 = np.array((1.8855246037831210E-005,1.0276306079345959E-006,4.4488907909799765E-008,1.4354065127727537E-009))
-
-    lines = ['-','--']
-    labels = ['$t=2$','$t=20$']
-    marks = ['.','.']
-    xdata = [N,N]
-    
-    ydata = [Er1,Er10]
-    plotnow('relErr','$N$','$E_r$',xdata,ydata,labels,linestyles=lines,markers=marks,ptype='semilogy')
-
-    ydata = [Evol1,Evol10]
-    plotnow('volErr','$N$','$|E_v|$',xdata,ydata,labels,linestyles=lines,markers=marks,ptype='semilogy')
-
-    ydata = [Es1,Es10]
-    plotnow('shapeErr','$N$','$E_s$',xdata,ydata,labels,linestyles=lines,markers=marks,ptype='semilogy')
-    
     return
 
 if __name__=="__main__":

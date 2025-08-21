@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+export NEKRS_HOME=$HOME/.local/nekrs
+
+if [[ ! -z $5 ]]; then
+  ntpn=$5
+else
+  ntpn=40   #seems to run better this way, still to be checked
+fi
+
+queue="compute"
+[ $2 -ge 16 ] && queue="computelarge"
+
+printf -v tme "%0.2d:%0.2d" $3 $4
+echo "submitting job \"$1\" on $2 nodes ($ntpn ppn) for $tme"
+
+echo   "#!/bin/bash"                              >  $1.batch
+echo   "#SBATCH --nodes=$2"                       >> $1.batch
+echo   "#SBATCH --ntasks-per-node=$ntpn"          >> $1.batch
+echo   "#SBATCH --time="$tme":00"                 >> $1.batch
+echo   "#SBATCH -p $queue"                        >> $1.batch
+echo   "#SBATCH -o $1.%A.log"                     >> $1.batch
+echo   "module purge"                             >> $1.batch
+echo   "module load openmpi/4.0.1/gcc/9.3.1"      >> $1.batch
+echo   "module load cmake/cmake-3.24"             >> $1.batch
+echo   rm -f  logfile                             >> $1.batch
+echo   rm -f  *.sch                               >> $1.batch
+echo   rm -f ioinfo                               >> $1.batch
+echo   touch $1.\$SLURM_JOBID.log                 >> $1.batch
+echo   ln -s $1.\$SLURM_JOBID.log logfile         >> $1.batch
+echo   "which mpif77 >> logfile"                  >> $1.batch
+echo   "echo \$SLURM_NODELIST >> logfile"         >> $1.batch
+echo   "mpirun $NEKRS_HOME/bin/nekrs --setup $1"  >> $1.batch
+echo   "exit 0;"                                  >> $1.batch
+sbatch $1.batch
+sleep 3
+squeue -u `whoami`
