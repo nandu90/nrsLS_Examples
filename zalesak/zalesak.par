@@ -1,6 +1,3 @@
-[OCCA]
-backend = serial
-
 [GENERAL]
 polynomialOrder = 5
 stopAt = endTime
@@ -9,7 +6,7 @@ dt = 1e-4
 timeStepper = tombo2
 
 checkPointControl = simulationTime 
-checkPointInterval = 2.0
+checkPointInterval = 0.2
 
 #verbose = true
 
