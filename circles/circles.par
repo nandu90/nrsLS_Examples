@@ -1,11 +1,11 @@
 [GENERAL]
-polynomialOrder = 3
+polynomialOrder = 5
 stopAt = numSteps
-numSteps = 5000  #12000
+numSteps = 500  #12000
 dt = 1e-3
 timeStepper = tombo2
 
-checkPointInterval = 500
+checkPointInterval = 50
 
 
 [PROBLEMTYPE]
@@ -31,7 +31,8 @@ residualTol = 1e-08
 #regularization = avm + c0 + noiseThreshold=1e-3
 #regularization = avm + noiseThreshold=1e-6
 #regularization = avm + scalingCoeff=0.1 + noiseThreshold=1e-3
-regularization = avm + scalingCoeff=0.01 + noiseThreshold=1e-6
+#regularization = avm + scalingCoeff=0.01 + noiseThreshold=1e-6
+#regularization = avm + scalingCoeff=0.01 + noiseThreshold=1e-2
 
 [TWOPHASE]
 c0_s01 = 2.0
