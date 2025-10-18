@@ -1,0 +1,65 @@
+#include "plugins/svv.hpp"
+
+#ifdef __okl__
+
+#include "circles.oudf"
+
+#endif
+
+static bool if2P = false;
+static occa::memory o_signls;
+
+void uservp(double time)
+{
+  auto mesh = nrs->mesh;
+  auto cds = nrs->cds;
+
+  //Interface Normals
+  nrs->gradientVolumeKernel(mesh->Nelements, mesh->o_vgeo, mesh->o_D, nrs->fieldOffset, cds->o_S, nrs->o_U);
+  oogs::startFinish(nrs->o_U, nrs->NVfields, nrs->fieldOffset, ogsDfloat, ogsAdd, nrs->gsh);
+  platform->linAlg->axmyVector(mesh->Nlocal, nrs->fieldOffset, 0, 1.0, nrs->mesh->o_invLMM, nrs->o_U);
+
+  signls(mesh->Nlocal, 1, nrs->fieldOffset, cds->o_S, o_signls);
+
+  normalVector(mesh->Nlocal, nrs->fieldOffset, o_signls, nrs->o_U);
+}
+
+void userq(double time)
+{
+  auto mesh = nrs->mesh;
+  auto cds = nrs->cds;
+
+  auto o_scalarSource = cds->o_NLT.slice(1 * nrs->fieldOffset, nrs->fieldOffset);
+  o_scalarSource.copyFrom(o_signls);
+}
+
+void UDF_Setup()
+{
+  nrs->userScalarSource = &userq;
+  nrs->userProperties = &uservp;
+
+  auto mesh = nrs->mesh;
+
+  //rescale zlength to be same as element length in x,y
+  auto totalel = mesh->Nelements;
+  MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm);
+  const dfloat zlength = 1./pow(totalel, 0.5);
+  platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm);
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto cds = nrs->cds;
+
+    udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, mesh->o_y, cds->o_S);
+  }
+
+  o_signls = platform->device.malloc<dfloat>(nrs->fieldOffset);
+
+  if(platform->options.compareArgs("SCALAR01 REGULARIZATION METHOD","NONE"))
+    svv::setup(if2P);
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  if(platform->options.compareArgs("SCALAR01 REGULARIZATION METHOD","NONE"))
+      svv::solverSetup();
+}
