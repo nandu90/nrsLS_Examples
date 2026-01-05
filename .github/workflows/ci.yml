@@ -44,7 +44,7 @@ jobs:
         git clone --depth 1 --branch "${NEKRS_BRANCH}" "${NEKRS_REPO}" "${NEKRS_SRC}"
 
     - name: config and build nekRS-LS
-      working-directory: "${NEKRS_SRC}"
+      working-directory: ${{ env.NEKRS_SRC }}
       run: |
         CC=mpicc CXX=mpic++ FC=mpif77 ./build.sh -DENABLE_CVODE=OFF -DNEKRS_CXX_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DNEKRS_C_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DNEKRS_Fortran_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DCMAKE_INSTALL_PREFIX=${{ env.NEKRS_HOME }} -DOCCA_CXXFLAGS=${{ env.NEKRS_COMPILER_FLAGS }}
         cmake --build build --target install -j 4
