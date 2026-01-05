@@ -1,16 +1,12 @@
-#include "plugins/svv.hpp"
+#include "ci.inc"
 
 #ifdef __okl__
 
-#include "linear.oudf"
-
 #endif
-
-static bool if2P = false;
 
 void extractLine(double time)
 {
-  const auto np = (platform->comm.mpiRank == 0) ? 10001 : 0;
+  const auto np = (platform->comm.mpiRank() == 0) ? 10001 : 0;
   const auto offset = np;
 
   static pointInterpolation_t *interpolator = nullptr;
@@ -32,14 +28,14 @@ void extractLine(double time)
       o_Sp.resize(nrs->Nscalar * offset);
     }
 
-    interpolator = new pointInterpolation_t(nrs->mesh, platform->comm.mpiComm);
+    interpolator = new pointInterpolation_t(nrs->meshV, platform->comm.mpiComm());
     interpolator->setPoints(xp, yp, zp);
     interpolator->find();
   }
 
-  interpolator->eval(nrs->Nscalar, nrs->fieldOffset, nrs->cds->o_S, offset, o_Sp);
+  interpolator->eval(nrs->Nscalar, nrs->fieldOffset, nrs->scalar->o_S, offset, o_Sp);
 
-  if (platform->comm.mpiRank == 0) {
+  if (platform->comm.mpiRank() == 0) {
     std::vector<dfloat> Sp(nrs->Nscalar * np);
     o_Sp.copyTo(Sp);
 
@@ -55,23 +51,59 @@ void extractLine(double time)
   }
 }
 
+dfloat exactSolution(const dfloat x)
+{
+    dfloat exact = 0.0;
+    if(x > 0.35 && x < 0.55){
+      exact = 1.0; 
+    }
+    else if(x > 0.7 && x < 0.9){
+      exact = sqrt(1.0 - pow((x-0.8)/0.1, 2.0));
+    }
+    else if(x > 0.08 && x <= 0.15){
+      exact = (1.0/0.0049)*x*x - (0.16/0.0049)*x + 0.0064/0.0049;
+    }
+    else if(x > 0.15 && x <= 0.22){
+      exact = (1.0/0.0049)*x*x - (0.44/0.0049)*x + 0.0484/0.0049;
+    }
+    return exact;
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
+}
+
 void UDF_Setup()
 {
-  auto mesh = nrs->mesh;
+  auto mesh = nrs->meshV;
+
+  std::vector<dfloat> U(mesh->dim * nrs->fluid->fieldOffset, 0.0);
+  std::vector<dfloat> sexact(mesh->Nlocal, 0.0);
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    auto cds = nrs->cds;
-    udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, nrs->o_U, cds->o_S);
+    auto &scalar = nrs->scalar;
+    auto [x, y, z] = mesh->xyzHost();
+    for(int n = 0; n < mesh->Nlocal; n++) {
+      U[n + 0 * nrs->fluid->fieldOffset] = 1.0;
+      U[n + 1 * nrs->fluid->fieldOffset] = 0.0;
+      U[n + 2 * nrs->fluid->fieldOffset] = 0.0;
+      sexact[n] = exactSolution(x[n]);
+    }
+    nrs->fluid->o_U.copyFrom(U.data(), U.size());
+    nrs->scalar->o_solution("s00").copyFrom(sexact.data(), sexact.size()); 
+    nrs->scalar->o_solution("s01").copyFrom(sexact.data(), sexact.size()); 
   }
-
-  svv::setup(if2P);
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  svv::solverSetup();
-
   if(nrs->lastStep){
-    extractLine(time);
+    // extractLine(time);
   }
+
+  if(ciMode) ciTestErrors(nrs, time, tstep);
 }
