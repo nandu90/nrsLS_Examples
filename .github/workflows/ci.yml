@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  # allows us to run workflows manually
+  workflow_dispatch:
+
+  push:
+    branches: ["v25"]
+  pull_request:
+    branches: ["v25"]
+
+env:
+  GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+  NEKRS_HOME: "${{ github.workspace }}/.local/nekrs"
+  MPICH_FC: "gfortran"
+  NEKRS_COMPILER_FLAGS: "-O2"
+  NRSCONFIG_NOBUILD: "1"
+  RUNNER_ARCH: "X64"
+  NEKRS_REPO: "https://github.com/nandu90/nekRS-LS.git"
+  NEKRS_BRANCH: "nextLS"
+  NEKRS_SRC: "${{ github.workspace }}/.local/nekrs-src"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+
+  install:
+    runs-on: ubuntu-22.04
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        clean: true
+
+    - name: APT dependencies
+      run: |
+        sudo apt -y update
+        sudo apt install -y mpich libmpich-dev
+
+    - name: Checkout nekRS-LS
+      run: |
+        git clone --depth 1 --branch "${NEKRS_BRANCH}" "${NEKRS_REPO}" "${NEKRS_SRC}"
+
+    - name: config and build nekRS-LS
+      working-directory: "${NEKRS_SRC}"
+      run: |
+        CC=mpicc CXX=mpic++ FC=mpif77 ./build.sh -DENABLE_CVODE=OFF -DNEKRS_CXX_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DNEKRS_C_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DNEKRS_Fortran_FLAGS=${{ env.NEKRS_COMPILER_FLAGS }} -DCMAKE_INSTALL_PREFIX=${{ env.NEKRS_HOME }} -DOCCA_CXXFLAGS=${{ env.NEKRS_COMPILER_FLAGS }}
+        cmake --build build --target install -j 4
+
+    - name: config tests 
+      env:
+        NEKRS_HOME: ${{ env.NEKRS_HOME }}
+      working-directory: ${{ github.workspace }}
+      run: cmake -S . -B build
+
+    - name: list tests
+      working-directory: build
+      run: ctest -N
+
+    - name: Upload install dir
+      uses: actions/upload-artifact@v4
+      with:
+        name: install-dir
+        retention-days: 2 
+        path: ${{ env.NEKRS_HOME }}
+        if-no-files-found: error
+
+    - name: Upload configured tests
+      uses: actions/upload-artifact@v4
+      with:
+        name: tests-build
+        retention-days: 2 
+        path: ${{ github.workspace }}/build
+        if-no-files-found: error
+
+  linear1D:
+    needs: install
+    runs-on: ubuntu-22.04
+    steps:
+
+    - uses: actions/checkout@v4
+      with:
+        clean: true
+
+    - name: APT dependencies
+      run: |
+        sudo apt -y update
+        sudo apt install -y mpich libmpich-dev
+
+    - name: Download install dir
+      uses: actions/download-artifact@v4
+      with:
+        name: install-dir
+        path: ${{ env.NEKRS_HOME }}
+
+    - name: Download configured tests dir
+      uses: actions/download-artifact@v4
+      with:
+        name: tests-build
+        path: ${{ github.workspace }}/build
+
+    - name: Set install dir permissions
+      run: chmod -R 755 ${{ env.NEKRS_HOME }}
+
+    - name: 'linear1D'
+      working-directory: build
+      run: ctest --output-on-failure -R linear1D 
