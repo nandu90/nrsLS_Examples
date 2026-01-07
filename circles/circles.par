@@ -1,39 +1,19 @@
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 500  #12000
-dt = 1e-3
+numSteps = 1000
+dt = 4e-3
 timeStepper = tombo2
 
-checkPointInterval = 50
+checkPointInterval = 200
 
+scalars = phi
 
-[PROBLEMTYPE]
-equation = navierStokes
-
-[PRESSURE]
-residualTol = 1e-04
-
-[VELOCITY]
+[FLUID VELOCITY]
 solver = none
-residualTol = 1e-06
-density = 1.0
-viscosity = 1e-10 
 
-[SCALAR00] #stores exact
-solver = none
+[SCALAR PHI]
+transportCoeff = 1.0
+diffusionCoeff = 1e-12
 residualTol = 1e-08
-
-[SCALAR01]
-solver = PGMRES
-residualTol = 1e-08
-#regularization = avm + noiseThreshold=1e-3
-#regularization = avm + c0 + noiseThreshold=1e-3
-#regularization = avm + noiseThreshold=1e-6
-#regularization = avm + scalingCoeff=0.1 + noiseThreshold=1e-3
-#regularization = avm + scalingCoeff=0.01 + noiseThreshold=1e-6
-#regularization = avm + scalingCoeff=0.01 + noiseThreshold=1e-2
-
-[TWOPHASE]
-c0_s01 = 2.0
-NSVV_s01 = 6.0
+regularization = svv+scalingCoeff=2.0+filterPower=6.0

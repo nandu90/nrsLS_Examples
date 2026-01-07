@@ -1,5 +1,27 @@
+dfloat getExact(const dfloat x, const dfloat y)
+{
+  const dfloat rad = 1.0;
+  const dfloat a = 0.7;
+  const dfloat b = (a-x)/sqrt((a-x)*(a-x) + y*y);
+  const dfloat c = (a+x)/sqrt((a+x)*(a+x) + y*y);
+  const dfloat d = a/rad;
+
+  dfloat s;
+  if(b >= d && c >= d) {
+    const dfloat e1 = -sqrt(x*x + pow(y + sqrt(rad*rad - a*a),2.0));
+    const dfloat e2 = -sqrt(x*x + pow(y - sqrt(rad*rad - a*a),2.0));
+    s = fmax(e1, e2);
+  }
+  else {
+    const dfloat e1 = sqrt(pow(x + a, 2.0) + y*y) - rad;
+    const dfloat e2 = sqrt(pow(x - a, 2.0) + y*y) - rad;
+    s = fmin(e1, e2);
+  }
+
+  return s;
+}
+
 @kernel void udfic(const dlong N,
-                   const dlong offset,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
                    @ restrict dfloat *S)
@@ -10,37 +32,30 @@
 
     const dfloat func = pow(x - 1.0, 2.0) + pow(y - 1.0, 2.0) + 0.1;
 
-    const dfloat rad = 1.0;
-    const dfloat a = 0.7;
-    const dfloat b = (a-x)/sqrt((a-x)*(a-x) + y*y);
-    const dfloat c = (a+x)/sqrt((a+x)*(a+x) + y*y);
-    const dfloat d = a/rad;
+    S[n] = getExact(x, y) * func;
+  }
+}
 
-    dfloat s;
-    if(b >= d && c >= d) {
-      const dfloat e1 = -sqrt(x*x + pow(y + sqrt(rad*rad - a*a),2.0));
-      const dfloat e2 = -sqrt(x*x + pow(y - sqrt(rad*rad - a*a),2.0));
-      s = fmax(e1, e2);
-    }
-    else {
-      const dfloat e1 = sqrt(pow(x + a, 2.0) + y*y) - rad;
-      const dfloat e2 = sqrt(pow(x - a, 2.0) + y*y) - rad;
-      s = fmin(e1, e2);
-    }
-    S[n + 0 * offset] = s; //exact
-    S[n + 1 * offset] = s * func; //initial
+@kernel void exact(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+
+    S[n] = getExact(x, y);
   }
 }
 
 @kernel void signls(const dlong Ntotal,
-                    const dlong is,
-                    const dlong offset,
                     @ restrict const dfloat *S,
                     @ restrict dfloat *sign)
 {
   for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
     if (n < Ntotal) {
-      const dfloat phi = S[n + is * offset];
+      const dfloat phi = S[n];
       sign[n] = tanh(phi / 0.5);
     }
   }
