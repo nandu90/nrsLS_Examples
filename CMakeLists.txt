@@ -75,6 +75,8 @@ set(dir "")
 
 ## TESTS ##
 
+add("sineWave" 2 "sine.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
+
 add("linear1D" 2 "linear.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
 add("circles" 2 "circles.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")

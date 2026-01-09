@@ -1,60 +1,49 @@
-#include "plugins/svv.hpp"
+#include "ci.inc"
 
 #ifdef __okl__
 
-#include "sine.oudf"
-
 #endif
 
-static bool if2P = false;
-
-
-void userq(double time)
+dfloat exactSolution(const dfloat x)
 {
-}
-
-void uservp(double time)
-{
-  auto mesh = nrs->mesh;
-  auto cds = nrs->cds;
-
-}
-
-void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
-{
-#if 0
-  {
-    auto props = kernelInfo;
-    props.define("p_sigma_k") = 0.6;
-    svv::buildKernel(props);
-  }
-#endif
+    dfloat exact = sin(M_PI * x);
+    return exact;
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
 }
 
 void UDF_Setup()
 {
-  nrs->userProperties = &uservp;
-  nrs->userScalarSource = &userq;
+  auto mesh = nrs->meshV;
 
-  auto mesh = nrs->mesh;
+  std::vector<dfloat> U(mesh->dim * nrs->fluid->fieldOffset, 0.0);
+  std::vector<dfloat> sexact(mesh->Nlocal, 0.0);
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    auto cds = nrs->cds;
-    udfic(mesh->Nlocal, nrs->fieldOffset, mesh->o_x, nrs->o_U, cds->o_S);
+    auto &scalar = nrs->scalar;
+    auto [x, y, z] = mesh->xyzHost();
+    for(int n = 0; n < mesh->Nlocal; n++) {
+      U[n + 0 * nrs->fluid->fieldOffset] = 1.0;
+      U[n + 1 * nrs->fluid->fieldOffset] = 0.0;
+      U[n + 2 * nrs->fluid->fieldOffset] = 0.0;
+      sexact[n] = exactSolution(x[n]);
+    }
+    nrs->fluid->o_U.copyFrom(U.data(), U.size());
+    nrs->scalar->o_solution("s00").copyFrom(sexact.data(), sexact.size());
+    nrs->scalar->o_solution("s01").copyFrom(sexact.data(), sexact.size());
   }
-
-  svv::setup(if2P);
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  svv::solverSetup();
-
   if (tstep == 0) {
     nrs->writeCheckpoint(time, tstep);
   }
+  if(ciMode) ciTestErrors(nrs, time, tstep);
 }
