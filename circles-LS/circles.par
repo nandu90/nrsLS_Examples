@@ -1,7 +1,10 @@
+[OCCA]
+  backend = CUDA
+
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 1000
+numSteps = 0
 dt = 4e-3
 timeStepper = tombo2
 
@@ -14,6 +17,6 @@ solver = none
 
 [SCALAR PHI]
 transportCoeff = 1.0
-diffusionCoeff = 1e-12
+diffusionCoeff = 1e-14
 residualTol = 1e-08
 regularization = svv+scalingCoeff=2.0+filterPower=6.0

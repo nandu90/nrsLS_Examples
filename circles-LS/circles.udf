@@ -7,36 +7,36 @@
 
 #endif
 
+bool use_plugin = true;
+
 void userq(double time)
 {
-  bool use_plugin = true;
   if (use_plugin) {
-    std::cout << "USING PLUGIN SOURCE TERMS\n";
-    LS::updateSourceTerms();
-  } else {
-    std::cout << "USING UDF SOURCE TERMS\n";
-    auto mesh = nrs->meshV;
-
-    //Update Interface Normals - stored in nrs->fluid->o_U
-    launchKernel("core-gradientVolumeHex3D",
-                 mesh->Nelements,
-                 mesh->o_vgeo,
-                 mesh->o_D,
-                 nrs->fluid->fieldOffset,
-                 nrs->scalar->o_solution("phi"),
-                 nrs->fluid->o_U);
-    oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
-    platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
-
-    //Compute sign function
-    auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
-    my_signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
-
-    my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
-
-    //Update source term
-    nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
+    return;
   }
+
+  std::cout << "USING UDF SOURCE TERMS\n";
+  auto mesh = nrs->meshV;
+
+  //Update Interface Normals - stored in nrs->fluid->o_U
+  launchKernel("core-gradientVolumeHex3D",
+               mesh->Nelements,
+               mesh->o_vgeo,
+               mesh->o_D,
+               nrs->fluid->fieldOffset,
+               nrs->scalar->o_solution("phi"),
+               nrs->fluid->o_U);
+  oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
+  platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
+
+  //Compute sign function
+  auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
+
+  my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
+
+  //Update source term
+  nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -62,10 +62,16 @@ void UDF_Setup()
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
   }
-  LS::setup();
+
+  if (use_plugin) {
+    LS::setup();
+  }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
   if(ciMode) ciTestErrors(nrs, time, tstep);
+  if (use_plugin) {
+    LS::solveLSR();
+  }
 }
