@@ -63,15 +63,16 @@ void UDF_Setup()
     udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
   }
 
-  if (use_plugin) {
-    LS::setup();
-  }
+  if (use_plugin) { LS::setup(); }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if(ciMode) ciTestErrors(nrs, time, tstep);
-  if (use_plugin) {
-    LS::solveLSR();
+  if (use_plugin) { LS::solveLSR(); }
+  if (ciMode) {
+    if (use_plugin)
+      ciTestErrors(LS::getLS(), time, tstep);
+    else
+      ciTestErrors(nrs, time, tstep);
   }
 }

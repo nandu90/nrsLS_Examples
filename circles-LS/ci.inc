@@ -35,3 +35,23 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
     CiEvalTest("L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
   }
 }
+
+void ciTestErrors(ls_t *tlsr, double time, int tstep)
+{
+  auto mesh = tlsr->meshV;
+
+  auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(tlsr->fieldOffset());
+
+  exact(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
+
+  auto o_phi = tlsr->o_solution("tlsr");
+
+  auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_phi, -1.0, o_exact, o_err);
+  const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
+  }
+}
