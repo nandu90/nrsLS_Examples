@@ -1,3 +1,4 @@
+#include "LS.hpp"
 #include "ci.inc"
 
 #ifdef __okl__
@@ -6,8 +7,16 @@
 
 #endif
 
+bool use_LS_plugin = true;
+bool use_UDF_source = true;
+
 void userq(double time)
 {
+  if (!use_UDF_source) {
+    return;
+  }
+
+  std::cout << "USING UDF SOURCE TERMS\n";
   auto mesh = nrs->meshV;
 
   //Update Interface Normals - stored in nrs->fluid->o_U
@@ -23,9 +32,9 @@ void userq(double time)
 
   //Compute sign function
   auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
-  signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
 
-  normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
+  my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
 
   //Update source term
   nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
@@ -54,9 +63,23 @@ void UDF_Setup()
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
   }
+
+  if (use_LS_plugin) { LS::setup(); }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if(ciMode) ciTestErrors(nrs, time, tstep);
+  if (use_LS_plugin && tstep == 0) {
+    LS::solveLSR();
+  }
+  if (ciMode) {
+    if (use_LS_plugin && !use_UDF_source)
+      ciTestErrors(LS::getLS(), time, tstep);
+    else if (!use_LS_plugin && use_UDF_source)
+      ciTestErrors(nrs, time, tstep);
+    else if (use_LS_plugin && use_UDF_source)
+      ciTestErrors(LS::getLS(), time, tstep);
+      ciTestErrors(nrs, time, tstep);
+      ciTestErrors(nrs, LS::getLS(), time, tstep);
+  }
 }

@@ -1,3 +1,6 @@
+[OCCA]
+  backend = CUDA
+
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
@@ -5,7 +8,9 @@ numSteps = 1000
 dt = 4e-3
 timeStepper = tombo2
 
-checkPointInterval = 200
+checkPointInterval = 1
+
+checkpointPrecision = 64
 
 scalars = phi
 
@@ -13,7 +18,8 @@ scalars = phi
 solver = none
 
 [SCALAR PHI]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
 transportCoeff = 1.0
-diffusionCoeff = 1e-12
-residualTol = 1e-08
+diffusionCoeff = 1e-14
+residualTol = 1e-14
 regularization = svv+scalingCoeff=2.0+filterPower=6.0

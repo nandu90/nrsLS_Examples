@@ -49,9 +49,9 @@ dfloat getExact(const dfloat x, const dfloat y)
   }
 }
 
-@kernel void signls(const dlong Ntotal,
-                    @ restrict const dfloat *S,
-                    @ restrict dfloat *sign)
+@kernel void my_signls(const dlong Ntotal,
+                       @ restrict const dfloat *S,
+                       @ restrict dfloat *sign)
 {
   for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
     if (n < Ntotal) {
@@ -61,10 +61,10 @@ dfloat getExact(const dfloat x, const dfloat y)
   }
 }
 
-@kernel void normalVector(const dlong Ntotal,
-                          const dlong offset,
-                          @ restrict const dfloat *sign,
-                          @ restrict dfloat *nvec)
+@kernel void my_normalVector(const dlong Ntotal,
+                             const dlong offset,
+                             @ restrict const dfloat *sign,
+                             @ restrict dfloat *nvec)
 {
   for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
     if (n < Ntotal) {
