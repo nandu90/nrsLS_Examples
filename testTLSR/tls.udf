@@ -46,8 +46,6 @@ void UDF_Setup()
 
     deltael /= N;
 
-    deltael = 1./50.;
-
     udfic(mesh->Nlocal, nrs->fieldOffset, deltael, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
 
     if(platform->comm.mpiRank() == 0)
