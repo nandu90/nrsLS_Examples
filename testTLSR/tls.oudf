@@ -19,8 +19,7 @@
     const dfloat eps     = eps_cls * deltael;
 
     const dfloat heaviside = 0.5 * (tanh(phi / (2.0 * eps)) + 1.0);
-    const dfloat rf = 0.1;
-    s[n] = rf*(heaviside-0.5);
+    s[n] = heaviside;
   }
 }
 
