@@ -15,21 +15,23 @@ void UDF_Setup()
   auto mesh = nrs->meshV;
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    const dlong N = mesh->Nverts * mesh->Nelements;
 
     //rescale zlength to be same as element length in x,y
     auto totalel = mesh->Nelements;
     MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
     const dfloat zlength = 1./pow(totalel, 0.5);
     platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
+    for (dlong i = 0; i < N; ++i) { mesh->EZ[i] = zlength * mesh->EZ[i]; }
 
     //Average element length
-    auto o_EX = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EX);
-    auto o_EY = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EY);
-    auto o_EZ = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EZ);
+    auto o_EX = platform->device.malloc<dfloat>(N, mesh->EX);
+    auto o_EY = platform->device.malloc<dfloat>(N, mesh->EY);
+    auto o_EZ = platform->device.malloc<dfloat>(N, mesh->EZ);
 
     auto o_deltael = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
 
-    deltaElement(mesh->Nelements, o_EX, o_EY, o_EZ, o_deltael);
+    deltaEl(mesh->Nelements, o_EX, o_EY, o_EZ, o_deltael);
 
     std::vector<dfloat> tmp(mesh->Nelements);
     o_deltael.copyTo(tmp.data());
@@ -41,10 +43,10 @@ void UDF_Setup()
 
     MPI_Allreduce(MPI_IN_PLACE, &deltael, 1, MPI_DFLOAT, MPI_SUM, platform->comm.mpiComm());
 
-    dlong N = mesh->Nelements;
-    MPI_Allreduce(MPI_IN_PLACE, &N, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+    dlong Ne = mesh->Nelements;
+    MPI_Allreduce(MPI_IN_PLACE, &Ne, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
 
-    deltael /= N;
+    deltael /= Ne;
 
     udfic(mesh->Nlocal, nrs->fieldOffset, deltael, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
 
