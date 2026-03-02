@@ -19,15 +19,16 @@
     const dfloat eps     = eps_cls * deltael;
 
     const dfloat heaviside = 0.5 * (tanh(phi / (2.0 * eps)) + 1.0);
-    s[n] = heaviside;
+    //s[n] = heaviside;
+    s[n] = 0.1*(heaviside-0.5);
   }
 }
 
-void rsum2(dfloat *s_sum, const dlong t, const dlong bs) {
+void my_rsum(dfloat *s_sum, const dlong t, const dlong bs) {
   s_sum[t] = s_sum[t] + s_sum[t + bs];
 }
 
-@kernel void deltaEl(const dlong Nelements,
+@kernel void my_deltaElement(const dlong Nelements,
                      @ restrict const dfloat *EX,
                      @ restrict const dfloat *EY,
                      @ restrict const dfloat *EZ,
@@ -56,7 +57,7 @@ void rsum2(dfloat *s_sum, const dlong t, const dlong bs) {
 #if p_blockSize > 512
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 512) {
-        rsum2(s_sum, t, 512);
+        my_rsum(s_sum, t, 512);
       }
     @barrier();
 #endif
@@ -64,50 +65,50 @@ void rsum2(dfloat *s_sum, const dlong t, const dlong bs) {
 #if p_blockSize > 256
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 256) {
-        rsum2(s_sum, t, 256);
+        my_rsum(s_sum, t, 256);
       }
     @barrier();
 #endif
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 128) {
-        rsum2(s_sum, t, 128);
+        my_rsum(s_sum, t, 128);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 64) {
-        rsum2(s_sum, t, 64);
+        my_rsum(s_sum, t, 64);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 32) {
-        rsum2(s_sum, t, 32);
+        my_rsum(s_sum, t, 32);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 16) {
-        rsum2(s_sum, t, 16);
+        my_rsum(s_sum, t, 16);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 8) {
-        rsum2(s_sum, t, 8);
+        my_rsum(s_sum, t, 8);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 4) {
-        rsum2(s_sum, t, 4);
+        my_rsum(s_sum, t, 4);
       }
     @barrier();
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0))
       if (t < 2) {
-        rsum2(s_sum, t, 2);
+        my_rsum(s_sum, t, 2);
       }
     @barrier();
 
@@ -118,5 +119,44 @@ void rsum2(dfloat *s_sum, const dlong t, const dlong bs) {
         deltael[e] = sum / p_Nvgeo;
       }
     @barrier();
+  }
+}
+
+@kernel void my_signls(const dlong Ntotal,
+                       @ restrict const dfloat *S,
+                       @ restrict dfloat *sign)
+{
+  for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
+    if (n < Ntotal) {
+      const dfloat phi = S[n];
+      sign[n] = tanh(phi / 0.5);
+    }
+  }
+}
+
+@kernel void my_normalVector(const dlong Ntotal,
+                             const dlong offset,
+                             @ restrict const dfloat *sign,
+                             @ restrict dfloat *nvec)
+{
+  for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
+    if (n < Ntotal) {
+      const dfloat nx = nvec[n + 0 * offset];
+      const dfloat ny = nvec[n + 1 * offset];
+      const dfloat nz = nvec[n + 2 * offset];
+      const dfloat cmag2 = nx * nx + ny * ny + nz * nz;
+      const dfloat cmag  = sqrt(cmag2);
+
+      if(cmag > 1e-12) {
+        nvec[n + 0 * offset] = sign[n] * nx / cmag;
+        nvec[n + 1 * offset] = sign[n] * ny / cmag;
+        nvec[n + 2 * offset] = sign[n] * nz / cmag;
+      }
+      else {
+        nvec[n + 0 * offset] = 0.0;
+        nvec[n + 1 * offset] = 0.0;
+        nvec[n + 2 * offset] = 0.0;
+      }
+    }
   }
 }
