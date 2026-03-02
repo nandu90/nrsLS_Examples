@@ -1,6 +1,7 @@
 @kernel void udfic(const dlong N,
                    const dlong offset,
                    const dfloat deltael,
+                   const bool udf_source,
                    @ restrict const dfloat *x,
                    @ restrict const dfloat *y,
                    @ restrict dfloat *s)
@@ -19,8 +20,11 @@
     const dfloat eps     = eps_cls * deltael;
 
     const dfloat heaviside = 0.5 * (tanh(phi / (2.0 * eps)) + 1.0);
-    //s[n] = heaviside;
-    s[n] = 0.1*(heaviside-0.5);
+    if (udf_source) {
+      s[n] = 0.1*(heaviside-0.5);
+    } else {
+      s[n] = heaviside;
+    }
   }
 }
 

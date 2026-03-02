@@ -4,8 +4,8 @@ backend = CUDA
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 10000
-dt = 5.0e-04
+numSteps = 1000
+dt = 5.0e-03
 timeStepper = tombo2
 checkPointInterval = 1
 scalars = phi
