@@ -1,0 +1,20 @@
+[OCCA]
+backend = CUDA
+
+[GENERAL]
+polynomialOrder = 5
+stopAt = numSteps
+numSteps = 1000
+dt = 5.0e-03
+timeStepper = tombo2
+checkPointInterval = 1
+scalars = phi
+
+[FLUID VELOCITY]
+solver = none
+
+[SCALAR PHI]
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
