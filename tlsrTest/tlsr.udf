@@ -2,7 +2,7 @@
 
 #ifdef __okl__
 
-#include "cls.oudf"
+#include "tlsr.oudf"
 
 #endif
 
