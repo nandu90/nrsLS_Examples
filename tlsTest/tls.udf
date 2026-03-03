@@ -1,4 +1,5 @@
 #include "LS.hpp"
+#include "ci.inc"
 
 #ifdef __okl__
 
@@ -41,6 +42,10 @@ void userq(double time)
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
 }
 
 void UDF_Setup()
@@ -95,5 +100,9 @@ void UDF_ExecuteStep(double time, int tstep)
 {
   if (use_LS_plugin && tstep > 0 && tstep % 50 == 0) {
     LS::solveLSR();
+  }
+  if (ciMode && nrs->lastStep) {
+    if (use_LS_plugin && !use_UDF_source)
+      ciTestErrors(LS::getLS(), time, tstep);
   }
 }

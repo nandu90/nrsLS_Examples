@@ -1,3 +1,23 @@
+#define R ((dfloat)0.25)
+
+static inline dfloat circle(const dfloat x, const dfloat y, const dfloat rad)
+{
+  // circle centered at (0,0)
+  return sqrt(x*x + y*y) - rad;
+}
+
+@kernel void exact(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    S[n] = circle(x,y,R);
+  }
+}
+
 @kernel void udfic(const dlong N,
                    const dlong offset,
                    const dfloat deltael,
@@ -8,13 +28,12 @@
 {
   for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
     const dfloat gfac = 1.0;
-    const dfloat rad  = 0.25 * gfac;
+    const dfloat rad  = R * gfac;
 
     const dfloat xm1 = x[n];
     const dfloat ym1 = y[n];
 
-    // circle centered at (0,0)
-    const dfloat phi = sqrt(xm1*xm1 + ym1*ym1) - rad;
+    const dfloat phi = circle(xm1,ym1,rad);
 
     const dfloat eps_cls = 1.0 / (p_Nq - 1.0);
     const dfloat eps     = eps_cls * deltael;
@@ -25,6 +44,21 @@
     } else {
       s[n] = heaviside;
     }
+  }
+}
+
+@kernel void eikonalError(const dlong N,
+                               const dlong offset,
+                               @restrict const dfloat *grad,
+                               @restrict dfloat *err)
+{
+  for (dlong i = 0; i < N; ++i; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat gx = grad[i + 0*offset];
+    const dfloat gy = grad[i + 1*offset];
+    const dfloat gz = grad[i + 2*offset];
+
+    const dfloat mag = sqrt(gx*gx + gy*gy + gz*gz);
+    err[i] = mag - (dfloat)1.0;  // eikonal residual at point i
   }
 }
 
