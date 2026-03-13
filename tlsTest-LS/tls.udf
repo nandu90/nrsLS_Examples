@@ -1,0 +1,108 @@
+#include "solver/lvlSet/lvlSet.hpp"
+//#include "ci.inc"
+
+#ifdef __okl__
+
+#include "tls.oudf"
+
+#endif
+
+bool use_LS_plugin = true;
+bool use_UDF_source = false;
+
+void userq(double time)
+{
+  if (!use_UDF_source) {
+    return;
+  }
+
+  std::cout << "USING UDF SOURCE TERMS\n";
+  auto mesh = nrs->meshV;
+
+  //Update Interface Normals - stored in nrs->fluid->o_U
+  launchKernel("core-gradientVolumeHex3D",
+               mesh->Nelements,
+               mesh->o_vgeo,
+               mesh->o_D,
+               nrs->fluid->fieldOffset,
+               nrs->scalar->o_solution("tls"),
+               nrs->fluid->o_U);
+  oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
+  platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
+
+  //Compute sign function
+  auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("tls"), o_signls);
+
+  my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
+
+  //Update source term
+  nrs->scalar->o_explicitTerms("tls").copyFrom(o_signls);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  //options.getArgs("CI-MODE", ciMode);
+  //if (ciMode) {
+  //  ciSetup(comm, options);
+  //}
+}
+
+void UDF_Setup()
+{
+  nrs->userSource = &userq;
+  auto mesh = nrs->meshV;
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    const dlong N = mesh->Nverts * mesh->Nelements;
+
+    //rescale zlength to be same as element length in x,y
+    auto totalel = mesh->Nelements;
+    MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+    const dfloat zlength = 1./pow(totalel, 0.5);
+    platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
+    for (dlong i = 0; i < N; ++i) { mesh->EZ[i] = zlength * mesh->EZ[i]; }
+
+    //Average element length
+    auto o_EX = platform->device.malloc<dfloat>(N, mesh->EX);
+    auto o_EY = platform->device.malloc<dfloat>(N, mesh->EY);
+    auto o_EZ = platform->device.malloc<dfloat>(N, mesh->EZ);
+
+    auto o_deltael = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+
+    my_deltaElement(mesh->Nelements, o_EX, o_EY, o_EZ, o_deltael);
+
+    std::vector<dfloat> tmp(mesh->Nelements);
+    o_deltael.copyTo(tmp.data());
+
+    dfloat deltael = 0.0;
+    for (dlong i = 0; i < mesh->Nelements; i++) {
+      deltael += tmp[i];
+    }
+
+    MPI_Allreduce(MPI_IN_PLACE, &deltael, 1, MPI_DFLOAT, MPI_SUM, platform->comm.mpiComm());
+
+    dlong Ne = mesh->Nelements;
+    MPI_Allreduce(MPI_IN_PLACE, &Ne, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+
+    deltael /= Ne;
+
+    udfic(mesh->Nlocal, nrs->fieldOffset, deltael, use_UDF_source, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
+
+    if(platform->comm.mpiRank() == 0)
+      printf("Average element length = %.4e\n",deltael);
+  }
+  
+  if (use_LS_plugin) { lvlSet::setup(); }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  if (use_LS_plugin && tstep == 0) {
+    lvlSet::solve(time);
+  }
+  //if (ciMode && nrs->lastStep) {
+  //  if (use_LS_plugin && !use_UDF_source)
+  //    ciTestErrors(LS::getLS(), time, tstep);
+  //}
+}

@@ -1,0 +1,38 @@
+userSections = tlsr, clsr
+
+[OCCA]
+backend = CUDA
+
+[GENERAL]
+polynomialOrder = 5
+stopAt = numSteps
+numSteps = 1
+dt = 4e-3
+timeStepper = tombo2
+checkPointInterval = 1
+checkpointPrecision = 64
+scalars = tls, cls
+
+[FLUID VELOCITY]
+solver = none
+
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[SCALAR CLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+solver = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[TLSR]
+checkpointing = true
+
+[CLSR]
+solver = none
