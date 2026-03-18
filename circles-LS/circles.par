@@ -1,7 +1,7 @@
 userSections = tlsr, clsr
 
 [OCCA]
-  backend = CPU
+backend = CPU
 
 [GENERAL]
 polynomialOrder = 5
@@ -14,10 +14,17 @@ checkPointInterval = 1
 
 checkpointPrecision = 64
 
-scalars = tls, cls
+scalars = phi, tls, cls
 
 [FLUID VELOCITY]
 solver = none
+
+[SCALAR PHI]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
 
 [SCALAR TLS]
 boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann

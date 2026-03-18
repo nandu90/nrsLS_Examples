@@ -36,15 +36,15 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
   }
 }
 
-void ciTestErrors(ls_t *tlsr, double time, int tstep)
+void ciTestErrors(lvlSet_t *ls, double time, int tstep)
 {
-  auto mesh = tlsr->meshV;
+  auto mesh = ls->meshV;
 
-  auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(tlsr->fieldOffset());
+  auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(ls->fieldOffset());
 
   exact(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
 
-  auto o_phi = tlsr->o_solution("tlsr");
+  auto o_phi = ls->o_S;
 
   auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
 
@@ -56,12 +56,12 @@ void ciTestErrors(ls_t *tlsr, double time, int tstep)
   }
 }
 
-void ciTestErrors(nrs_t *nrs, ls_t *tlsr, double time, int tstep)
+void ciTestErrors(nrs_t *nrs, lvlSet_t *ls, double time, int tstep)
 {
   auto mesh = nrs->meshV;
 
   auto o_scalar = nrs->scalar->o_solution("phi");
-  auto o_lvlset = tlsr->o_solution("tlsr");
+  auto o_lvlset = ls->o_S;
 
   auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
 
