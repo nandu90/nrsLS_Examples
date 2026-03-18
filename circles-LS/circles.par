@@ -6,7 +6,7 @@ backend = CPU
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 1
+numSteps = 1000
 dt = 4e-3
 timeStepper = tombo2
 
