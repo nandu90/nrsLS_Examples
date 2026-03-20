@@ -53,3 +53,4 @@ solver = none
 maximumSteps = 10000
 targetCFL = 0.9
 stoppingCondition = targetTime
+normalAveraging = true
