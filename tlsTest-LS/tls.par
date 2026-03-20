@@ -1,4 +1,4 @@
-userSections = tlsr, clsr
+userSections = tlsr, clsr, lvlset
 
 [OCCA]
 backend = CUDA
@@ -41,6 +41,12 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 [TLSR]
 residualTol = 1e-14
 checkpointing = true
+distanceFactor = 500
 
 [CLSR]
 solver = none
+
+[LVLSET]
+maximumSteps = 10000
+targetCFL = 0.9
+stoppingCondition = targetTime

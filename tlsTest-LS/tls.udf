@@ -100,7 +100,7 @@ void UDF_Setup()
 void UDF_ExecuteStep(double time, int tstep)
 {
   if (use_LS_plugin && tstep == 0) {
-    lvlSet::solve(time, 500);
+    lvlSet::solve(time);
   }
   if (ciMode && nrs->lastStep) {
     if (use_LS_plugin) {
