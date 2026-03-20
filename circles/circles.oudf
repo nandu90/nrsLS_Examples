@@ -22,6 +22,7 @@ dfloat getExact(const dfloat x, const dfloat y)
 }
 
 @kernel void udfic(const dlong N,
+                   const bool udf_source,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
                    @ restrict dfloat *S)
@@ -33,6 +34,9 @@ dfloat getExact(const dfloat x, const dfloat y)
     const dfloat func = pow(x - 1.0, 2.0) + pow(y - 1.0, 2.0) + 0.1;
 
     S[n] = getExact(x, y) * func;
+    if (!udf_source) {
+      S[n] = (S[n]/0.1+0.5);
+    }
   }
 }
 

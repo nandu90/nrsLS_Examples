@@ -1,4 +1,4 @@
-#include "LS.hpp"
+#include "solver/lvlSet/lvlSet.hpp"
 #include "ci.inc"
 
 #ifdef __okl__
@@ -7,16 +7,14 @@
 
 #endif
 
-bool use_LS_plugin = true;
-bool use_UDF_source = true;
+bool use_udf_source = true;
 
 void userq(double time)
 {
-  if (!use_UDF_source) {
+  if (!use_udf_source) {
     return;
   }
 
-  std::cout << "USING UDF SOURCE TERMS\n";
   auto mesh = nrs->meshV;
 
   //Update Interface Normals - stored in nrs->fluid->o_U
@@ -61,25 +59,24 @@ void UDF_Setup()
   platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
+    udfic(mesh->Nlocal, true, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
+    udfic(mesh->Nlocal, false, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("tls"));
+    udfic(mesh->Nlocal, false, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("cls"));
   }
 
-  if (use_LS_plugin) { LS::setup(); }
+  lvlSet::setup();
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if (use_LS_plugin && tstep == 0) {
-    LS::solveLSR(true);
+  if (tstep == 0) {
+    lvlSet::solve(time);
   }
-  if (ciMode) {
-    if (use_LS_plugin && !use_UDF_source)
-      ciTestErrors(LS::getLS(), time, tstep);
-    else if (!use_LS_plugin && use_UDF_source)
+  if (ciMode && nrs->lastStep) {
+    ciTestErrors(lvlSet::getTLSR(), time, tstep);
+    if (use_udf_source) {
       ciTestErrors(nrs, time, tstep);
-    else if (use_LS_plugin && use_UDF_source)
-      ciTestErrors(LS::getLS(), time, tstep);
-      ciTestErrors(nrs, time, tstep);
-      ciTestErrors(nrs, LS::getLS(), time, tstep);
+      ciTestErrors(nrs, lvlSet::getTLSR(), time, tstep);
+    }
   }
 }

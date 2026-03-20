@@ -1,3 +1,5 @@
+userSections = tlsr, clsr, lvlset
+
 [OCCA]
 backend = CUDA
 
@@ -5,16 +7,46 @@ backend = CUDA
 polynomialOrder = 5
 stopAt = numSteps
 numSteps = 1000
-dt = 5.0e-03
+dt = 4e-3
 timeStepper = tombo2
 checkPointInterval = 1
-scalars = phi
+checkpointPrecision = 64
+scalars = tls, cls, phi
 
 [FLUID VELOCITY]
 solver = none
 
 [SCALAR PHI]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
 transportCoeff = 1.0
-diffusionCoeff = 1e-14
+diffusionCoeff = 1e-12
 residualTol = 1e-14
 regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-12
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[SCALAR CLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+solver = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-12
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[TLSR]
+residualTol = 1e-14
+checkpointing = true
+distanceFactor = 500
+
+[CLSR]
+solver = none
+
+[LVLSET]
+maximumSteps = 10000
+targetCFL = 0.9
+stoppingCondition = targetTime
