@@ -84,3 +84,20 @@ void ciTestErrors(lvlSet_t *ls, double time, int tstep)
   }
 
 }
+
+void ciTestErrors(nrs_t *nrs, lvlSet_t *ls, double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  auto o_scalar = nrs->scalar->o_solution("phi");
+  auto o_lvlset = ls->o_S;
+
+  auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_scalar, -1.0, o_lvlset, o_err);
+  const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("Scalar Solver v/s Level-Set Solver L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
+  }
+}
