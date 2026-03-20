@@ -6,7 +6,7 @@ static int ciMode = 0;
 
 void ciSetup(MPI_Comm comm, setupAide &options)
 {
-  options.setArgs("CHECKPOINT INTERVAL", "1");
+  options.setArgs("CHECKPOINT INTERVAL", "200");
 
   options.setArgs("SCALAR00 SOLVER TOLERANCE", std::string("1e-14"));
 }
