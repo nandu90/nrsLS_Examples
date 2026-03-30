@@ -33,9 +33,13 @@ void UDF_Setup()
     auto o_tls = nrs->scalar->o_solution("tls");
     auto o_cls = nrs->scalar->o_solution("cls");
 
+    // initialize exact signed-distance field for the circular interface
     udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+
+    // initialize CLS with intentionally incorrect interface thickness (epsin = 4.0)
     lvlSet::initHeaviside(o_tls, o_cls, 4.0);
 
+    // compute initial CLS mass (lumped-mass weighted sum of cls over the domain)
     clsMass0 = platform->linAlg->innerProd(mesh->Nlocal,
                                            mesh->o_LMM,
                                            o_cls,
