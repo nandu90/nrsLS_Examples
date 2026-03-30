@@ -1,0 +1,53 @@
+#include "plugins/lvlSet.hpp"
+#include "ci.inc"
+
+#ifdef __okl__
+
+#include "cls.oudf"
+
+#endif
+
+static dfloat clsMass0 = -1.0;
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
+}
+
+void UDF_Setup()
+{
+  auto mesh = nrs->meshV;
+
+  // rescale zlength to be same as element length in x,y
+  auto totalel = mesh->Nelements;
+  MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+  const dfloat zlength = 1./pow(totalel, 0.5);
+  platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
+
+  lvlSet::setup();
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+    lvlSet::initHeaviside(o_tls, o_cls, 4.0);
+
+    clsMass0 = platform->linAlg->innerProd(mesh->Nlocal,
+                                           mesh->o_LMM,
+                                           o_cls,
+                                           platform->comm.mpiComm());
+  }
+
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  lvlSet::solve(time);
+  if (ciMode && nrs->lastStep) {
+    ciTestErrorsCLS(lvlSet::getCLSR(), time, tstep, clsMass0);
+  }
+}
