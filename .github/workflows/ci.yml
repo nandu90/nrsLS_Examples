@@ -17,7 +17,7 @@ env:
   NRSCONFIG_NOBUILD: "1"
   RUNNER_ARCH: "X64"
   NEKRS_REPO: "https://github.com/nandu90/nekRS-LS.git"
-  NEKRS_BRANCH: "nextLS"
+  NEKRS_BRANCH: "nekLS"
   NEKRS_SRC: "${{ github.workspace }}/.local/nekrs-src"
 
 defaults:
