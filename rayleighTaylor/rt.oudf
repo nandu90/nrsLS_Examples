@@ -1,0 +1,49 @@
+@kernel void tlsic(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+
+		const dfloat pi = 4.0 * atan(1.0);
+
+		const dfloat phi = 2.0 + 0.1 * cos(2.0 * pi * x);
+
+    S[n] = y - phi;
+  }
+}
+
+@kernel void fillProp(const dlong N,
+											const dlong offset,
+											@ restrict const dfloat *PSI,
+											@ restrict dfloat *PROPS)
+{
+	for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+		dfloat psi = PSI[n];
+		psi = fmin(1.0, psi);
+		psi = fmax(0.0, psi);
+
+		const dfloat At = 0.5;
+		const dfloat Re = 3000.0;
+		const dfloat rhog = 1.0;
+		const dfloat rhol = (1.0 + At) * rhog / (1.0 - At);
+
+		const dfloat gcc = 2.0;
+		const dfloat d = 1.0;
+
+		const dfloat mu = rhol * pow(d,1.5) * sqrt(gcc) / Re;
+
+		PROPS[n + 0 * offset] = mu;
+		PROPS[n + 1 * offset] = rhol * psi + rhog * (1.0 - psi);
+	}
+}
+
+void udfDirichlet(bcData *bc)
+{
+	if(isField("clsr")) {
+		bc->sScalar = bc->usrwrk[bc->idxVol];
+	}
+}
+
