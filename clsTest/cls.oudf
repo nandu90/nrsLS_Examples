@@ -10,11 +10,11 @@
   }
 }
 
-@kernel void stretch(const dlong N,
-                     const dfloat beta,
-                     const dfloat ymin,
-                     const dfloat ymax,
-                     @restrict dfloat *Y)
+@kernel void stretchMesh(const dlong N,
+                         const dfloat beta,
+                         const dfloat ymin,
+                         const dfloat ymax,
+                         @restrict dfloat *Y)
 {
   const dfloat ymid = 0.5 * (ymin + ymax);
   const dfloat half = 0.5 * (ymax - ymin);

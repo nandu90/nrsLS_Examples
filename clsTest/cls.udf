@@ -7,14 +7,9 @@
 
 #endif
 
-static dfloat clsMass0 = -1.0;
-
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.getArgs("CI-MODE", ciMode);
-  if (ciMode) {
-    ciSetup(comm, options);
-  }
 }
 
 void UDF_Setup()
@@ -27,10 +22,10 @@ void UDF_Setup()
   const dfloat zlength = 1./pow(totalel, 0.5);
   platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
-  if (ciMode == 2) {
+  if (ciMode > 1) {
     // apply non-uniform mesh stretching
-    stretch(mesh->Nlocal, 1.2, -2.0, 2.0, mesh->o_y);
-    stretch(mesh->Nlocal, 2.0, -2.0, 2.0, mesh->o_x);
+    stretchMesh(mesh->Nlocal, 1.2, -2.0, 2.0, mesh->o_y);
+    stretchMesh(mesh->Nlocal, 2.0, -2.0, 2.0, mesh->o_x);
   }
 
   lvlSet::setup();
@@ -44,20 +39,17 @@ void UDF_Setup()
 
     // initialize CLS with intentionally incorrect interface thickness (epsin = 4.0)
     lvlSet::initHeaviside(o_tls, o_cls, 4.0);
-
-    // compute initial CLS mass (lumped-mass weighted sum of cls over the domain)
-    clsMass0 = platform->linAlg->innerProd(mesh->Nlocal,
-                                           mesh->o_LMM,
-                                           o_cls,
-                                           platform->comm.mpiComm());
   }
 
+  if (ciMode) {
+    ciSetup(platform->comm.mpiComm(), platform->options);
+  }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
   lvlSet::solve(time);
-  if (ciMode && nrs->lastStep) {
-    ciTestErrorsCLS(lvlSet::getCLSR(), time, tstep, clsMass0);
+  if (ciMode) {
+    ciTestErrors(time, tstep, lvlSet::getCLSR()->o_S);
   }
 }

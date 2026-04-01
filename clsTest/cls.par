@@ -6,7 +6,7 @@ backend = CPU
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 1
+numSteps = 0
 dt = 4e-3
 timeStepper = tombo2
 checkPointInterval = 1000
@@ -35,10 +35,9 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 solver = none
 
 [CLSR]
-checkpointing = true
+#checkpointing = true
 distanceFactor = 50.0
 maximumSteps = 10000
 
 [LVLSET]
-interfaceWidthMesh = min
-interfaceWidthFactor = 1.0
+interfaceWidthMesh = mean
