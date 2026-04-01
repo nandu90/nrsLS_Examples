@@ -1,0 +1,54 @@
+c-----------------------------------------------------------------------
+      subroutine usrdat2()
+      include "SIZE"
+      include "TOTAL"
+
+      integer ie, ifc, id
+      character*3 tag
+
+      do ie=1,nelt
+        cbc(5,iel,1) = 'P  '
+        cbc(6,iel,1) = 'P  '
+      do ifc=1,2*ndim
+
+         tag = cbc(ifc,ie,1)
+         id = 0
+         if (tag .eq. 'bc1') then
+            id = 1
+         elseif (tag .eq. 'bc2') then
+            id = 2
+         elseif (tag .eq. 'bc3') then
+            id = 3
+         elseif (tag .eq. 'bc4') then
+            id = 4
+         endif
+
+         boundaryID(ifc,ie) = id
+
+c         write(6,*) 'ie=', ie,
+c     +              ' face=', ifc,
+c     +              ' tag=', tag,
+c     +              ' id=', id
+
+      enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrsetvert(glo_num,nel,nx,ny,nz) ! to modify glo_num
+      integer*8 glo_num(1)
+
+      ! kludge for periodic bc in z
+      nxy  = nx*ny
+      nxyz = nx*ny*nz
+      do iel = 1,nel
+         ioff = nxyz*(iel-1)
+         do ixy = 1,nxy
+            glo_num(ioff + nxy*(nz-1) + ixy) = glo_num(ioff + ixy)
+         enddo
+      enddo
+
+      return
+      end
+c-----------------------------------------------------------------------

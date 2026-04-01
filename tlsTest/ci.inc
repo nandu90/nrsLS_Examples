@@ -1,0 +1,108 @@
+#include <math.h>
+
+static int ciMode = 0;
+dfloat EPS = 0.0;
+
+void ciSetup(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("CHECKPOINT INTERVAL", "0");
+}
+
+void ciTestErrors(nrs_t *nrs, double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+  auto &scalar = nrs->scalar;
+
+  auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
+
+  udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
+
+  auto o_phi = scalar->o_solution("phi");
+
+  auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_phi, -1.0, o_exact, o_err);
+  const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
+
+  if (ciMode == 1)      { EPS = 6.0e-06; }
+  else if (ciMode == 2) { EPS = 2.0e-05; }
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("Scalar Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
+  }
+}
+
+void ciTestErrors(lvlSet_t *ls, double time, int tstep)
+{
+  auto mesh = ls->meshV;
+
+  // test #1 - verify solution against exact signed-distance function
+  auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(ls->fieldOffset());
+
+  udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
+
+  auto o_phi = ls->o_S;
+
+  auto o_err_exact = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_phi, -1.0, o_exact, o_err_exact);
+  const auto L1norm_exact = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err_exact, platform->comm.mpiComm());
+
+  if (ciMode == 1)      { EPS = 6.0e-06; }
+  else if (ciMode == 2) { EPS = 2.0e-05; }
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("Level-Set Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm_exact), L1norm_exact < EPS);
+  }
+
+  // test #2 - checdk Eikonal error e.g. |grad(phi)| = 1.0
+  auto o_grad = platform->deviceMemoryPool.reserve<dfloat>(mesh->dim * ls->vFieldOffset);
+
+  launchKernel("core-gradientVolumeHex3D",
+               mesh->Nelements,
+               mesh->o_vgeo,
+               mesh->o_D,
+               ls->vFieldOffset,
+               ls->o_S,
+               o_grad);
+  oogs::startFinish(o_grad, mesh->dim, ls->vFieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
+  platform->linAlg->axmyVector(mesh->Nlocal, ls->vFieldOffset, 0, 1.0, mesh->o_invLMM, o_grad);
+
+  auto o_err_eik = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  eikonalError(mesh->Nlocal,
+               ls->vFieldOffset,
+               o_grad,
+               o_err_eik);
+
+  const auto L1norm_eik =
+    platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err_eik, platform->comm.mpiComm());
+
+  if (ciMode == 1)      { EPS = 2.1e-04; }
+  else if (ciMode == 2) { EPS = 6.5e-04; }
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("Level-Set Solver Eikonal Residual (|grad(phi)| - 1)... L1-Err norm: " + to_string_f(L1norm_eik), L1norm_eik < EPS);
+  }
+
+}
+
+void ciTestErrors(nrs_t *nrs, lvlSet_t *ls, double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  auto o_scalar = nrs->scalar->o_solution("phi");
+  auto o_lvlset = ls->o_S;
+
+  auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
+
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_scalar, -1.0, o_lvlset, o_err);
+  const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
+
+  if (ciMode == 1)      { EPS = 2.0e-07; }
+  else if (ciMode == 2) { EPS = 2.0e-06; }
+
+  if (platform->comm.mpiRank() == 0) {
+    CiEvalTest("Scalar Solver v/s Level-Set Solver L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
+  }
+}
