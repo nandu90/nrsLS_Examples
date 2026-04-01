@@ -1,0 +1,57 @@
+@kernel void tlsic(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+
+    const dfloat rad = 0.3/2.0;
+    const dfloat xcen = 0.5;
+    const dfloat ycen = 0.75;
+
+    const dfloat xp = x - xcen;
+    const dfloat yp = y - ycen;
+
+    S[n] = sqrt(xp * xp + yp * yp) - rad;
+  }
+}
+
+@kernel void velUpdate(const dlong N,
+                       const dlong offset,
+                       const dfloat time,
+                       @ restrict const dfloat *X,
+                       @ restrict const dfloat *Y,
+                       @ restrict dfloat *U)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+
+    const dfloat pi = 4.0 * atan(1.0);
+
+    const dfloat sinpix = sin(pi * x);
+    const dfloat sinpiy = sin(pi * y);
+    const dfloat sin2piy = sin(2.0 * pi * y);
+    const dfloat sin2pix = sin(2.0 * pi * x);
+    const dfloat cospit8 = cos(pi * time / 8.0);
+
+    const dfloat ux = sinpix * sinpix * sin2piy * cospit8;
+    const dfloat uy = - sin2pix * sinpiy * sinpiy * cospit8; 
+
+    U[n + 0 * offset] = ux;
+    U[n + 1 * offset] = uy;
+    U[n + 2 * offset] = 0.0;
+  }
+}
+
+void udfDirichlet(bcData *bc)
+{
+	if(isField("scalar cls")) {
+		bc->sScalar = 1.0;
+	} else if(isField("clsr")) {
+		bc->sScalar = 1.0;
+	}
+}
+
