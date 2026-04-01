@@ -22,6 +22,7 @@ dfloat getExact(const dfloat x, const dfloat y)
 }
 
 @kernel void udfic(const dlong N,
+                   const dfloat r_f,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
                    @ restrict dfloat *S)
@@ -32,7 +33,12 @@ dfloat getExact(const dfloat x, const dfloat y)
 
     const dfloat func = pow(x - 1.0, 2.0) + pow(y - 1.0, 2.0) + 0.1;
 
-    S[n] = getExact(x, y) * func;
+    S[n] = getExact(x, y) * func; // perturbed signed-distance field
+
+    if (r_f > 0.0) {
+      // Pre-invert the TLSR regularization so that its internal regularization step recovers the original perturbed signed-distance field
+      S[n] = (S[n]/r_f+0.5);
+    }
   }
 }
 
@@ -49,9 +55,9 @@ dfloat getExact(const dfloat x, const dfloat y)
   }
 }
 
-@kernel void signls(const dlong Ntotal,
-                    @ restrict const dfloat *S,
-                    @ restrict dfloat *sign)
+@kernel void my_signls(const dlong Ntotal,
+                       @ restrict const dfloat *S,
+                       @ restrict dfloat *sign)
 {
   for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
     if (n < Ntotal) {
@@ -61,10 +67,10 @@ dfloat getExact(const dfloat x, const dfloat y)
   }
 }
 
-@kernel void normalVector(const dlong Ntotal,
-                          const dlong offset,
-                          @ restrict const dfloat *sign,
-                          @ restrict dfloat *nvec)
+@kernel void my_normalVector(const dlong Ntotal,
+                             const dlong offset,
+                             @ restrict const dfloat *sign,
+                             @ restrict dfloat *nvec)
 {
   for (dlong n = 0; n < Ntotal; ++n; @tile(p_blockSize, @outer, @inner)) {
     if (n < Ntotal) {

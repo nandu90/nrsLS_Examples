@@ -1,3 +1,4 @@
+#include "plugins/lvlSet.hpp"
 #include "ci.inc"
 
 #ifdef __okl__
@@ -6,11 +7,18 @@
 
 #endif
 
+bool use_udf_source = true;
+dfloat tlsrRegFactor = -1.0;
+
 void userq(double time)
 {
+  if (!use_udf_source) {
+    return;
+  }
+
   auto mesh = nrs->meshV;
 
-  //Update Interface Normals - stored in nrs->fluid->o_U
+  // Update Interface Normals - stored in nrs->fluid->o_U
   launchKernel("core-gradientVolumeHex3D",
                mesh->Nelements,
                mesh->o_vgeo,
@@ -21,13 +29,13 @@ void userq(double time)
   oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
   platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
 
-  //Compute sign function
+  // Compute sign function
   auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
-  signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
 
-  normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
+  my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
 
-  //Update source term
+  // Update source term
   nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
 }
 
@@ -45,18 +53,40 @@ void UDF_Setup()
 
   auto mesh = nrs->meshV;
 
-  //rescale zlength to be same as element length in x,y
+  // rescale zlength to be same as element length in x,y
   auto totalel = mesh->Nelements;
   MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
   const dfloat zlength = 1./pow(totalel, 0.5);
   platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
+  lvlSet::setup();
+
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+    auto o_phi = nrs->scalar->o_solution("phi");
+
+    // Initialize with a perturbation of the signed-distance field for the union of two overlapping discs
+    platform->options.getArgs("TLSR REGULARIZATION FACTOR", tlsrRegFactor);
+
+    udfic(mesh->Nlocal, -1.0, mesh->o_x, mesh->o_y, o_phi);
+    udfic(mesh->Nlocal, tlsrRegFactor, mesh->o_x, mesh->o_y, o_tls);
+    udfic(mesh->Nlocal, tlsrRegFactor, mesh->o_x, mesh->o_y, o_cls);
   }
+
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if(ciMode) ciTestErrors(nrs, time, tstep);
+  if (tstep == 0) {
+    lvlSet::solve(time);
+  }
+
+  if (ciMode && nrs->lastStep) {
+    ciTestErrors(lvlSet::getTLSR(), time, tstep);
+    if (use_udf_source) {
+      ciTestErrors(nrs, time, tstep);
+      ciTestErrors(nrs, lvlSet::getTLSR(), time, tstep);
+    }
+  }
 }
