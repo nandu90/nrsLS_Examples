@@ -1,0 +1,44 @@
+userSections = tlsr, clsr, lvlset
+
+[OCCA]
+backend = CPU
+
+[GENERAL]
+polynomialOrder = 5
+stopAt = numSteps
+numSteps = 1
+dt = 4e-3
+timeStepper = tombo2
+checkPointInterval = 1000
+scalars = tls, cls
+#verbose = true
+
+[FLUID VELOCITY]
+solver = none
+
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[SCALAR CLS]
+solver = none
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[TLSR]
+solver = none
+
+[CLSR]
+checkpointing = true
+distanceFactor = 50.0
+maximumSteps = 10000
+
+[LVLSET]
+interfaceWidthMesh = min
+interfaceWidthFactor = 1.0

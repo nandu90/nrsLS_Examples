@@ -1,0 +1,30 @@
+@kernel void udfic(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    S[n] = sqrt(x * x + y * y) - 1.0;
+  }
+}
+
+@kernel void stretch(const dlong N,
+                     const dfloat beta,
+                     const dfloat ymin,
+                     const dfloat ymax,
+                     @restrict dfloat *Y)
+{
+  const dfloat ymid = 0.5 * (ymin + ymax);
+  const dfloat half = 0.5 * (ymax - ymin);
+  const dfloat t = tanh(beta);
+
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    if (n < N) {
+      const dfloat eta = (Y[n] - ymid) / half; // map [ymin,ymax] -> [-1,1]
+      const dfloat arg = eta * t;
+      Y[n] = ymid + half * atanh(arg) / beta;
+    }
+  }
+}
