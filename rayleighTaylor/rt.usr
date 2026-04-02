@@ -1,0 +1,31 @@
+      subroutine usrdat3
+      include "SIZE"
+      include "TOTAL"
+
+      integer ie, ifc, id
+      character*3 cb3
+
+      do ie=1,nelt
+        do ifc=1,2*ndim
+          cb3 = cbc(ifc,ie,1)
+          if (cb3 .eq. 'W  ') then
+            cbc(ifc,ie,2) = 'I  '
+            cbc(ifc,ie,3) = 'I  '
+            boundaryID(ifc,ie) = 1
+            boundaryIDt(ifc,ie) = 1
+          elseif (cb3 .eq. 'O  ') then
+            cbc(ifc,ie,2) = 'I  '
+            cbc(ifc,ie,3) = 'I  '
+            boundaryID(ifc,ie) = 2
+            boundaryIDt(ifc,ie) = 2
+          elseif (cb3 .eq. 'SYM') then
+            cbc(ifc,ie,2) = 'I  '
+            cbc(ifc,ie,3) = 'I  '
+            boundaryID(ifc,ie) = 3
+            boundaryIDt(ifc,ie) = 3
+          endif
+        enddo
+      enddo
+
+      return
+      end
