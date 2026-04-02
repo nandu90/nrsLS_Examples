@@ -81,7 +81,7 @@ add("linear1D" 2 "linear.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
 add("circles" 2 "circles.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
-add("tlsTest" 2 "tls.par" "1;2" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
+add("tlsTest" 2 "tls.par" "1;2;3;4" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
 add("clsTest" 2 "cls.par" "1;2;3;4" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
