@@ -30,6 +30,10 @@ void UDF_Setup()
 
   lvlSet::setup();
 
+  if (ciMode) {
+    ciSetup(platform->comm.mpiComm(), platform->options);
+  }
+
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     auto o_tls = nrs->scalar->o_solution("tls");
     auto o_cls = nrs->scalar->o_solution("cls");
@@ -39,10 +43,6 @@ void UDF_Setup()
 
     // initialize CLS with intentionally incorrect interface thickness (epsin = 4.0)
     lvlSet::initHeaviside(o_tls, o_cls, 4.0);
-  }
-
-  if (ciMode) {
-    ciSetup(platform->comm.mpiComm(), platform->options);
   }
 }
 

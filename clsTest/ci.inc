@@ -4,12 +4,12 @@ static int ciMode = 0;
 
 #define EPS_UNIFORM 4.93e-3
 #define EPS_VOL_UNIFORM 7.66e-03
-#define EPS_MIN 4.37e-3
-#define EPS_VOL_MIN 6.75e-03
+#define EPS_MIN 2.58e-3
+#define EPS_VOL_MIN 3.68e-03
 #define EPS_MEAN 4.37e-3
 #define EPS_VOL_MEAN 6.75e-03
-#define EPS_MAX 4.37e-3
-#define EPS_VOL_MAX 6.75e-03
+#define EPS_MAX 2.83e-02
+#define EPS_VOL_MAX 4.42e-02
 
 void ciSetup(MPI_Comm comm, setupAide &options)
 {
