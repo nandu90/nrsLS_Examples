@@ -8,39 +8,39 @@
 
 void uservp(double time)
 {
-	auto mesh = nrs->meshV;
+  auto mesh = nrs->meshV;
 
-	auto o_psi = nrs->scalar->o_solution("cls");
+  auto o_psi = nrs->scalar->o_solution("cls");
 
-	fillProp(mesh->Nlocal,
-					 nrs->fluid->fieldOffset,
-					 o_psi,
-					 nrs->fluid->o_prop);
+  fillProp(mesh->Nlocal,
+           nrs->fluid->fieldOffset,
+           o_psi,
+           nrs->fluid->o_prop);
 }
 
 void userf(double time)
 {
-	auto mesh = nrs->meshV;
+  auto mesh = nrs->meshV;
 
-	auto o_fx = nrs->fluid->o_EXT + 0 * nrs->fluid->fieldOffset;
-	auto o_fy = nrs->fluid->o_EXT + 1 * nrs->fluid->fieldOffset;
-	auto o_fz = nrs->fluid->o_EXT + 2 * nrs->fluid->fieldOffset;
+  auto o_fx = nrs->fluid->o_EXT + 0 * nrs->fluid->fieldOffset;
+  auto o_fy = nrs->fluid->o_EXT + 1 * nrs->fluid->fieldOffset;
+  auto o_fz = nrs->fluid->o_EXT + 2 * nrs->fluid->fieldOffset;
 
-	platform->linAlg->fill(mesh->Nlocal, 0.0, o_fx);
-	platform->linAlg->fill(mesh->Nlocal, -2.0, o_fy);
-	platform->linAlg->fill(mesh->Nlocal, 0.0, o_fz);
+  platform->linAlg->fill(mesh->Nlocal, 0.0, o_fx);
+  platform->linAlg->fill(mesh->Nlocal, -2.0, o_fy);
+  platform->linAlg->fill(mesh->Nlocal, 0.0, o_fz);
 }
 
 void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
 {
-	platform->options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
-	platform->options.setArgs("FLUID PRESSURE ELLIPTIC PRECO COEFF FIELD", "TRUE");
+  platform->options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  platform->options.setArgs("FLUID PRESSURE ELLIPTIC PRECO COEFF FIELD", "TRUE");
 }
 
 void UDF_Setup()
 {
-	nrs->userProperties = &uservp;
-	nrs->userSource = &userf;
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
 
   auto mesh = nrs->meshV;
 
@@ -59,12 +59,12 @@ void UDF_Setup()
     tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
     lvlSet::initHeaviside(o_tls, o_cls);
   }
-	platform->app->bc->o_usrwrk.resize(mesh->Nlocal);
+  /* platform->app->bc->o_usrwrk.resize(mesh->Nlocal); */
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-	auto o_cls = nrs->scalar->o_solution("cls");
-	platform->app->bc->o_usrwrk.copyFrom(o_cls, nrs->meshV->Nlocal);
+  /* auto o_cls = nrs->scalar->o_solution("cls"); */
+  /* platform->app->bc->o_usrwrk.copyFrom(o_cls, nrs->meshV->Nlocal); */
   lvlSet::solve(time);
 }

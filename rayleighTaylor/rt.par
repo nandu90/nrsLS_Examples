@@ -12,7 +12,7 @@ timeStepper = tombo2
 checkpointControl = simulationTime
 checkPointInterval = 0.1
 
-advectionSubCyclingSteps = 2
+#advectionSubCyclingSteps = 2
 
 scalars = tls, cls
 #verbose = true
