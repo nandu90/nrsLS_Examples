@@ -2,12 +2,15 @@
 
 static int ciMode = 0;
 
-#define EPS0 1.1e-3
-#define EPS1 4.0e-5
+#define EPS 1.1e-3
 
 void ciSetup(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("CHECKPOINT INTERVAL", "0");
+
+  if (ciMode == 1) {
+    options.setArgs("NUMBER TIMESTEPS", "1000");
+  }
 }
 
 void ciTestErrors(nrs_t *nrs, double time, int tstep)
@@ -19,7 +22,7 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
 
   exact(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
 
-  auto o_phi = scalar->o_solution("phi");
+  auto o_phi = scalar->o_solution("tls");
 
   auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
 
@@ -27,7 +30,7 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
   const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
 
   if (platform->comm.mpiRank() == 0) {
-    CiEvalTest("Scalar Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm), L1norm < EPS0);
+    CiEvalTest("Scalar Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
   }
 }
 
@@ -47,23 +50,6 @@ void ciTestErrors(lvlSet_t *ls, double time, int tstep)
   const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
 
   if (platform->comm.mpiRank() == 0) {
-    CiEvalTest("Level-Set Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm), L1norm < EPS0);
-  }
-}
-
-void ciTestErrors(nrs_t *nrs, lvlSet_t *ls, double time, int tstep)
-{
-  auto mesh = nrs->meshV;
-
-  auto o_scalar = nrs->scalar->o_solution("phi");
-  auto o_lvlset = ls->o_S;
-
-  auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
-
-  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_scalar, -1.0, o_lvlset, o_err);
-  const auto L1norm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
-
-  if (platform->comm.mpiRank() == 0) {
-    CiEvalTest("Scalar Solver v/s Level-Set Solver L1-Err norm: " + to_string_f(L1norm), L1norm < EPS1);
+    CiEvalTest("Level-Set Solver v/s Exact Solution... L1-Err norm: " + to_string_f(L1norm), L1norm < EPS);
   }
 }

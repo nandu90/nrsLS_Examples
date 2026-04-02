@@ -6,22 +6,15 @@ backend = CPU
 [GENERAL]
 polynomialOrder = 5
 stopAt = numSteps
-numSteps = 1000
+numSteps = 0
 dt = 4e-3
 timeStepper = tombo2
 checkPointInterval = 200
 checkpointPrecision = 64
-scalars = phi, tls, cls
+scalars = tls, cls
 
 [FLUID VELOCITY]
 solver = none
-
-[SCALAR PHI]
-boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
-transportCoeff = 1.0
-diffusionCoeff = 1e-12
-residualTol = 1e-14
-regularization = svv+scalingCoeff=2.0+filterPower=6.0
 
 [SCALAR TLS]
 boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
@@ -41,10 +34,11 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 [TLSR]
 residualTol = 1e-14
 checkpointing = true
-distanceFactor = 3.175
+distanceFactor = 31.75
 maximumSteps = 10000
 targetCFL = 0.9
 stoppingCondition = targetTime
+regularizationFactor = 1.0
 
 [CLSR]
 solver = none

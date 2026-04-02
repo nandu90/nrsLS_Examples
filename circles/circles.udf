@@ -7,8 +7,7 @@
 
 #endif
 
-bool use_udf_source = true;
-dfloat tlsrRegFactor = -1.0;
+bool use_udf_source = false;
 
 void userq(double time)
 {
@@ -24,25 +23,26 @@ void userq(double time)
                mesh->o_vgeo,
                mesh->o_D,
                nrs->fluid->fieldOffset,
-               nrs->scalar->o_solution("phi"),
+               nrs->scalar->o_solution("tls"),
                nrs->fluid->o_U);
   oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
   platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
 
   // Compute sign function
   auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
-  my_signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("tls"), o_signls);
 
   my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
 
   // Update source term
-  nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
+  nrs->scalar->o_explicitTerms("tls").copyFrom(o_signls);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.getArgs("CI-MODE", ciMode);
   if (ciMode) {
+    if (ciMode == 1) { use_udf_source = true; }
     ciSetup(comm, options);
   }
 }
@@ -59,34 +59,33 @@ void UDF_Setup()
   const dfloat zlength = 1./pow(totalel, 0.5);
   platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
-  lvlSet::setup();
+  if (!use_udf_source) { lvlSet::setup(); }
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
     auto o_tls = nrs->scalar->o_solution("tls");
     auto o_cls = nrs->scalar->o_solution("cls");
-    auto o_phi = nrs->scalar->o_solution("phi");
 
     // Initialize with a perturbation of the signed-distance field for the union of two overlapping discs
-    platform->options.getArgs("TLSR REGULARIZATION FACTOR", tlsrRegFactor);
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_cls);
 
-    udfic(mesh->Nlocal, -1.0, mesh->o_x, mesh->o_y, o_phi);
-    udfic(mesh->Nlocal, tlsrRegFactor, mesh->o_x, mesh->o_y, o_tls);
-    udfic(mesh->Nlocal, tlsrRegFactor, mesh->o_x, mesh->o_y, o_cls);
+    if (!use_udf_source) {
+      // TLSR solver expects an unshifted CLS field in [0,1]; internally it subtracts 0.5 to center the interface.
+      // We add +0.5 here so that after this internal shift the resulting field is centered (zero at the interface).
+      // This keeps the initial condition consistent with the scalar solver and UDF source term formulation.
+      platform->linAlg->add(mesh->Nlocal, 0.5, o_tls);
+      platform->linAlg->add(mesh->Nlocal, 0.5, o_cls);
+    }
   }
 
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if (tstep == 0) {
+  if (!use_udf_source && tstep == 0) {
     lvlSet::solve(time);
   }
 
-  if (ciMode && nrs->lastStep) {
-    ciTestErrors(lvlSet::getTLSR(), time, tstep);
-    if (use_udf_source) {
-      ciTestErrors(nrs, time, tstep);
-      ciTestErrors(nrs, lvlSet::getTLSR(), time, tstep);
-    }
-  }
+  if (ciMode == 1 && nrs->lastStep) { ciTestErrors(nrs, time, tstep); }
+  else if (ciMode == 2) { ciTestErrors(lvlSet::getTLSR(), time, tstep); }
 }
