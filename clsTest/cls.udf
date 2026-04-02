@@ -1,0 +1,55 @@
+#include "plugins/lvlSet.hpp"
+#include "ci.inc"
+
+#ifdef __okl__
+
+#include "cls.oudf"
+
+#endif
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.getArgs("CI-MODE", ciMode);
+}
+
+void UDF_Setup()
+{
+  auto mesh = nrs->meshV;
+
+  // rescale zlength to be same as element length in x,y
+  auto totalel = mesh->Nelements;
+  MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+  const dfloat zlength = 1./pow(totalel, 0.5);
+  platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
+
+  if (ciMode > 1) {
+    // apply non-uniform mesh stretching
+    stretchMesh(mesh->Nlocal, 1.2, -2.0, 2.0, mesh->o_y);
+    stretchMesh(mesh->Nlocal, 2.0, -2.0, 2.0, mesh->o_x);
+  }
+
+  lvlSet::setup();
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    // initialize exact signed-distance field for the circular interface
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+
+    // initialize CLS with intentionally incorrect interface thickness (epsin = 4.0)
+    lvlSet::initHeaviside(o_tls, o_cls, 4.0);
+  }
+
+  if (ciMode) {
+    ciSetup(platform->comm.mpiComm(), platform->options);
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  lvlSet::solve(time);
+  if (ciMode) {
+    ciTestErrors(time, tstep, lvlSet::getCLSR()->o_S);
+  }
+}
