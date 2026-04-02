@@ -1,7 +1,7 @@
-userSections = tlsr, clsr, lvlset
+userSections = tlsr, clsr
 
 [GENERAL]
-polynomialOrder = 5
+polynomialOrder = 6
 stopAt = numSteps
 numSteps = 40000
 dt = 2e-4
@@ -31,15 +31,9 @@ regularization = svv
 
 [TLSR]
 solveFrequency = 0.5
-checkPointing = true
-distanceFactor = 25
-residualTol = 1e-08
+regularization = svv+scalingCoeff=2.0+filterPower=4.0
 
 [CLSR]
 solveFrequency = 0.05
-checkPointing = true
-residualTol = 1e-08
-#regularization = svv+scalingCoeff=2.0+filterPower=4.0
+regularization = svv+scalingCoeff=0.1+filterPower=2.0
 
-[LVLSET]
-normalAveraging = true
