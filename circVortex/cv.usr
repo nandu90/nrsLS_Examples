@@ -1,0 +1,21 @@
+      subroutine usrdat3
+      include "SIZE"
+      include "TOTAL"
+
+      integer ie, ifc, id
+      character*3 tag
+
+      do ie=1,nelt
+        do ifc=1,2*ndim
+          tag = cbc(ifc,ie,1)
+          if (tag .eq. 'I  ') then
+            cbc(ifc,ie,2) = 'I  '
+            cbc(ifc,ie,3) = 't  '
+            boundaryID(ifc,ie) = 1
+            boundaryIDt(ifc,ie) = 1
+          endif
+        enddo
+      enddo
+
+      return
+      end

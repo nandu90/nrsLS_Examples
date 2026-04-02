@@ -1,0 +1,43 @@
+#include "plugins/lvlSet.hpp"
+
+#ifdef __okl__
+
+#include "cv.oudf"
+
+#endif
+
+void UDF_Setup()
+{
+  auto mesh = nrs->meshV;
+
+  //rescale zlength to be same as element length in x,y
+  auto totalel = mesh->Nelements;
+  MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+  const dfloat zlength = 1./pow(totalel, 0.5);
+  platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
+
+  lvlSet::setup();
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+    lvlSet::initHeaviside(o_tls, o_cls);
+  }
+
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  velUpdate(mesh->Nlocal, 
+            nrs->scalar->fieldOffset(),
+            time,
+            mesh->o_x,
+            mesh->o_y,
+            nrs->scalar->o_U);
+
+  lvlSet::solve(time);
+}
