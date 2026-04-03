@@ -1,19 +1,46 @@
+userSections = tlsr, clsr
+
+[OCCA]
+backend = CPU
+
 [GENERAL]
 polynomialOrder = 5
-stopAt = numSteps
-numSteps = 1000
-dt = 4e-3
+stopAt = endTime
+endTime = 4.0
+dt = 1.495e-02
 timeStepper = tombo2
 
-checkPointInterval = 200
+checkPointInterval = 4.0
+checkPointControl = simulationTime
 
-scalars = phi
+scalars = tls, cls
 
 [FLUID VELOCITY]
 solver = none
 
-[SCALAR PHI]
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
-residualTol = 1e-08
+residualTol = 1e-14
 regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[SCALAR CLS]
+solver = none
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-12
+residualTol = 1e-14
+regularization = svv+scalingCoeff=2.0+filterPower=6.0
+
+[TLSR]
+residualTol = 1e-14
+#checkpointing = true
+distanceFactor = 31.75
+maximumSteps = 10000
+targetCFL = 0.9
+stoppingCondition = targetTime
+regularizationFactor = 1.0
+
+[CLSR]
+solver = none

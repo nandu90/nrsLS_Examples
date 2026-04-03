@@ -8,23 +8,22 @@ void ciSetup(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("CHECKPOINT INTERVAL", "0");
 
-  options.setArgs("SCALAR00 SOLVER TOLERANCE", std::string("1e-8"));
+  if (ciMode == 1) {
+    options.setArgs("END TIME", to_string_f(4.0));
+    options.setArgs("DT", to_string_f(1.49518002e-02));
+  } else if (ciMode == 2) {
+    options.setArgs("END TIME", to_string_f(0.0));
+  }
 }
 
-void ciTestErrors(nrs_t *nrs, double time, int tstep)
+void ciTestErrors(double time, int tstep, occa::memory& o_phi)
 {
-  if (!nrs->lastStep) {
-    return;
-  }
-
   auto mesh = nrs->meshV;
   auto &scalar = nrs->scalar;
 
   auto o_exact = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
 
   exact(mesh->Nlocal, mesh->o_x, mesh->o_y, o_exact);
-
-  auto o_phi = scalar->o_solution("phi");
 
   auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
 

@@ -1,3 +1,4 @@
+#include "plugins/lvlSet.hpp"
 #include "ci.inc"
 
 #ifdef __okl__
@@ -8,27 +9,31 @@
 
 void userq(double time)
 {
+  if (ciMode != 1) {
+    return;
+  }
+
   auto mesh = nrs->meshV;
 
-  //Update Interface Normals - stored in nrs->fluid->o_U
+  // Update Interface Normals - stored in nrs->fluid->o_U
   launchKernel("core-gradientVolumeHex3D",
                mesh->Nelements,
                mesh->o_vgeo,
                mesh->o_D,
                nrs->fluid->fieldOffset,
-               nrs->scalar->o_solution("phi"),
+               nrs->scalar->o_solution("tls"),
                nrs->fluid->o_U);
   oogs::startFinish(nrs->fluid->o_U, mesh->dim, nrs->fluid->fieldOffset, ogsDfloat, ogsAdd, mesh->oogs);
   platform->linAlg->axmyVector(mesh->Nlocal, nrs->fluid->fieldOffset, 0, 1.0, mesh->o_invLMM, nrs->fluid->o_U);
 
-  //Compute sign function
+  // Compute sign function
   auto o_signls = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffset);
-  signls(mesh->Nlocal, nrs->scalar->o_solution("phi"), o_signls);
+  my_signls(mesh->Nlocal, nrs->scalar->o_solution("tls"), o_signls);
 
-  normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
+  my_normalVector(mesh->Nlocal, nrs->fluid->fieldOffset, o_signls, nrs->fluid->o_U);
 
-  //Update source term
-  nrs->scalar->o_explicitTerms("phi").copyFrom(o_signls);
+  // Update source term
+  nrs->scalar->o_explicitTerms("tls").copyFrom(o_signls);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -45,18 +50,43 @@ void UDF_Setup()
 
   auto mesh = nrs->meshV;
 
-  //rescale zlength to be same as element length in x,y
+  // rescale zlength to be same as element length in x,y
   auto totalel = mesh->Nelements;
   MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
   const dfloat zlength = 1./pow(totalel, 0.5);
   platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
-  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, nrs->scalar->o_solution("phi"));
+  if (ciMode == 2) {
+    lvlSet::setup(); 
   }
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    // Initialize with a perturbation of the signed-distance field for the union of two overlapping discs
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
+    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_cls);
+
+    if (ciMode == 2) {
+      // TLSR solver expects an unshifted CLS field in [0,1]; internally it subtracts 0.5 to center the interface.
+      // We add +0.5 here so that after this internal shift the resulting field is centered (zero at the interface).
+      // This keeps the initial condition consistent with the scalar solver and UDF source term formulation.
+      platform->linAlg->add(mesh->Nlocal, 0.5, o_tls);
+      platform->linAlg->add(mesh->Nlocal, 0.5, o_cls);
+    }
+  }
+
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  if(ciMode) ciTestErrors(nrs, time, tstep);
+  if (ciMode == 2 && tstep == 0) {
+    lvlSet::solve(time);
+  }
+
+  if (ciMode == 2 || nrs->lastStep) { 
+    auto o_phi = ciMode == 1 ? nrs->scalar->o_solution("tls") : lvlSet::getTLSR()->o_S;
+    ciTestErrors(time, tstep, o_phi); 
+  }
 }
