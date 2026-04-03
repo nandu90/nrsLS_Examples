@@ -1,16 +1,18 @@
-userSections = tlsr, clsr, lvlset
+userSections = tlsr, clsr
 
 [OCCA]
 backend = CPU
 
 [GENERAL]
 polynomialOrder = 5
-stopAt = numSteps
-numSteps = 0
-dt = 4e-3
+stopAt = endTime
+endTime = 4.0
+dt = 1.495e-02
 timeStepper = tombo2
-checkPointInterval = 200
-checkpointPrecision = 64
+
+checkPointInterval = 4.0
+checkPointControl = simulationTime
+
 scalars = tls, cls
 
 [FLUID VELOCITY]
@@ -33,7 +35,7 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 
 [TLSR]
 residualTol = 1e-14
-checkpointing = true
+#checkpointing = true
 distanceFactor = 31.75
 maximumSteps = 10000
 targetCFL = 0.9
@@ -42,6 +44,3 @@ regularizationFactor = 1.0
 
 [CLSR]
 solver = none
-
-[LVLSET]
-normalAveraging = true
