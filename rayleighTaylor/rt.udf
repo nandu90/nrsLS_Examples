@@ -13,9 +13,9 @@ void uservp(double time)
   auto o_psi = nrs->scalar->o_solution("cls");
 
   fillProp(mesh->Nlocal,
-           nrs->fluid->fieldOffset,
-           o_psi,
-           nrs->fluid->o_prop);
+      nrs->fluid->fieldOffset,
+      o_psi,
+      nrs->fluid->o_prop);
 }
 
 void userf(double time)
@@ -31,16 +31,16 @@ void userf(double time)
   platform->linAlg->fill(mesh->Nlocal, 0.0, o_fz);
 }
 
-void UDF_LoadKernels(deviceKernelProperties& kernelInfo)
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
-  platform->options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
-  platform->options.setArgs("FLUID PRESSURE ELLIPTIC PRECO COEFF FIELD", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }
 
 void UDF_Setup()
 {
-  nrs->userProperties = &uservp;
-  nrs->userSource = &userf;
+	nrs->userProperties = &uservp;
+	nrs->userSource = &userf;
 
   auto mesh = nrs->meshV;
 
