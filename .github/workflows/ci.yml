@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
 
   push:
-    branches: ["v25"]
+    branches: ["master"]
   pull_request:
-    branches: ["v25"]
+    branches: ["master"]
 
 env:
   GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
