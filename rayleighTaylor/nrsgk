@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+[ $# -ne 4 ] && echo "nrsgk requires 4 arguments: %job_name% %number_of_gpus% %runtime_hours% %runtime_minutes%" && exit 0;
+
+ngpus=$2
+[ $ngpus -gt 16 ] && echo "only 16 gpus available" && exit 0;
+ 
+if [[ $ngpus -gt 8 ]]; then
+  nnodes=2
+  res=$(( $ngpus % 2 ))
+  [ $res -ne 0 ] && ngpus=$(($ngpus+1))
+  ntpn=$(( $ngpus / 2 ))
+else
+  nnodes=1
+  ntpn=$ngpus
+fi
+
+export NEKRS_HOME=/home/$USER/.local/nekrs
+
+printf -v tme "%0.2d:%0.2d" $3 $4 
+echo "submitting job \"$1\" on $(($nnodes * $ntpn)) gpus for $tme"
+
+echo   "#!/bin/bash"                                >  $1.batch
+echo   "#SBATCH --nodes=$nnodes"                    >> $1.batch
+echo   "#SBATCH --ntasks-per-node=$ntpn"            >> $1.batch
+echo   "#SBATCH --gres=gpu:$ntpn"                   >> $1.batch
+echo   "#SBATCH --time="$tme":00"                   >> $1.batch
+echo   "#SBATCH -p gpu"                             >> $1.batch
+echo   "#SBATCH -o $1.%A.log"                       >> $1.batch
+echo   "module purge"                               >> $1.batch
+echo   "module load gcc/11.2.1"                     >> $1.batch
+echo   "module load cmake/cmake-3.26.4"                     >> $1.batch
+echo   "module load cuda/12.4"                      >> $1.batch
+echo   "module load openmpi/5.0.3/gcc/5.0.3-cuda12.4-rpm" >> $1.batch
+echo   "echo" $1 ">" SESSION.NAME                   >> $1.batch #still useful for visnek/etc.
+echo   rm -f logfile                                >> $1.batch
+echo   rm -f  *.sch                                 >> $1.batch
+echo   rm -f ioinfo                                 >> $1.batch
+echo   touch $1.\$SLURM_JOBID.log                   >> $1.batch
+echo   ln -s $1.\$SLURM_JOBID.log logfile           >> $1.batch
+echo   "module list >> logfile"                     >> $1.batch
+echo   "which mpicc >> logfile"                     >> $1.batch
+echo   "echo \$SLURM_NODELIST >> logfile"           >> $1.batch
+echo   "mpirun -v $NEKRS_HOME/bin/nekrs --setup $1" >> $1.batch
+echo   "exit 0;"                                    >> $1.batch
+sbatch $1.batch
+sleep 3
+squeue -u `whoami`
