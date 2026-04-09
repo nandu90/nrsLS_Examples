@@ -42,9 +42,7 @@ regularization = svv+scalingCoeff=0.1+filterPower=2.0
 
 [TLSR]
 solveFrequency = 0.1
-regularization = svv+scalingCoeff=2.0+filterPower=4.0
 
 [CLSR]
 solveFrequency = 0.01
-regularization = svv+scalingCoeff=1.0+filterPower=2.0
 #boundaryTypeMap = zeroNeumann, udfDirichlet, zeroNeumann
