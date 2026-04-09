@@ -107,7 +107,7 @@ def main():
     marks.append('')
 
     diverr = extract_divu_nek5000("log5000")
-    stepData.append(step)
+    stepData.append(np.linspace(1,diverr.shape[0],diverr.shape[0]))
     errData.append(diverr)
     labels.append('nek5000')
     lines.append('--')
