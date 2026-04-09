@@ -76,6 +76,22 @@ def extract_divuerr_arrays(logfile_path):
 
     return np.array(steps), np.array(divuerrs)
 
+def extract_divu_nek5000(filename):
+    values = []
+
+    # regex to match floats like 1.23E-04, -2.7e+01, etc.
+    float_pattern = r'[-+]?\d*\.\d+(?:[eE][-+]?\d+)?|[-+]?\d+(?:[eE][-+]?\d+)?'
+
+    with open(filename, 'r') as f:
+        for line in f:
+            if "L1/L2 DIV(V)-QTL" in line:
+                nums = re.findall(float_pattern, line)
+                if nums:
+                    # take the last number in the line
+                    values.append(float(nums[-1]))
+
+    return np.array(values)
+
 def main():
     stepData = []
     errData = []
@@ -83,28 +99,21 @@ def main():
     lines = []
     marks = []
 
-    step, diverr = extract_divuerr_arrays("log_splitting")
-    stepData.append(step)
-    errData.append(diverr)
-    labels.append('strong')
-    lines.append('--')
-    marks.append('')
-
-    step, diverr = extract_divuerr_arrays("log_splitting_weak")
-    stepData.append(step)
-    errData.append(diverr)
-    labels.append('weak')
-    lines.append('--')
-    marks.append('')
-
     step, diverr = extract_divuerr_arrays("logfile")
     stepData.append(step)
     errData.append(diverr)
-    labels.append('weak-normalAvg=f')
+    labels.append('nekRS')
     lines.append('--')
     marks.append('')
 
-    plotnow('divErrs','tstep','$E_{L2}$',stepData,errData,labels,linestyles=lines,markers=marks,ptype='semilogy')
+    diverr = extract_divu_nek5000("log5000")
+    stepData.append(step)
+    errData.append(diverr)
+    labels.append('nek5000')
+    lines.append('--')
+    marks.append('')
+
+    plotnow('divErrs','tstep','$divUErr_{L2}$',stepData,errData,labels,linestyles=lines,markers=marks,ptype='semilogy')
     
     
     return

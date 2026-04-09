@@ -42,8 +42,8 @@
 
 void udfDirichlet(bcData *bc)
 {
-	if(isField("clsr")) {
-		bc->sScalar = bc->usrwrk[bc->idxVol];
-	}
+  if(isField("clsr")) {
+    bc->sScalar = bc->usrwrk[bc->idxVol];
+  }
 }
 

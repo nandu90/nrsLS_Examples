@@ -9,5 +9,5 @@ Box
 -50 -200 -1                           Nelx  Nely
 0 1 1.                        x0 x1 ratio
 0 4 1.			      y0 y1 ratio
-0 1 1.			      y0 y1 ratio
+0 0.02 1.			      y0 y1 ratio
 SYM,SYM,W  ,O  ,P  ,P                     BC's

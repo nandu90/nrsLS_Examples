@@ -39,16 +39,10 @@ void UDF_Setup0(MPI_Comm comm, setupAide &options)
 
 void UDF_Setup()
 {
-	nrs->userProperties = &uservp;
-	nrs->userSource = &userf;
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
 
   auto mesh = nrs->meshV;
-
-  //rescale zlength to be same as element length in x,y
-  auto totalel = mesh->Nelements;
-  MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
-  const dfloat zlength = 1./pow(totalel, 0.5);
-  platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
   lvlSet::setup();
 
