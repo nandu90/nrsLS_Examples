@@ -6,29 +6,21 @@
 
 #endif
 
+static dfloat rhoRatio, muRatio, Re;
+
 void uservp(double time)
 {
-  auto mesh = nrs->meshV;
-
-  auto o_psi = nrs->scalar->o_solution("cls");
-
-  fillProp(mesh->Nlocal,
-      nrs->fluid->fieldOffset,
-      o_psi,
-      nrs->fluid->o_prop);
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
 }
 
 void userf(double time)
 {
   auto mesh = nrs->meshV;
 
-  auto o_fx = nrs->fluid->o_EXT + 0 * nrs->fluid->fieldOffset;
-  auto o_fy = nrs->fluid->o_EXT + 1 * nrs->fluid->fieldOffset;
-  auto o_fz = nrs->fluid->o_EXT + 2 * nrs->fluid->fieldOffset;
-
-  platform->linAlg->fill(mesh->Nlocal, 0.0, o_fx);
-  platform->linAlg->fill(mesh->Nlocal, -2.0, o_fy);
-  platform->linAlg->fill(mesh->Nlocal, 0.0, o_fz);
+  platform->linAlg->add(mesh->Nlocal,
+                        -2.0,
+                        nrs->fluid->o_EXT,
+                        1 * nrs->fluid->fieldOffset);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -53,6 +45,18 @@ void UDF_Setup()
     tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
     lvlSet::initHeaviside(o_tls, o_cls);
   }
+
+  const dfloat At = 0.9;
+  const dfloat rhog = 1.0;
+  const dfloat rhol = (1.0 + At) * rhog / (1.0 - At);
+
+  const dfloat gcc = 2.0;
+  const dfloat d = 1.0;
+
+  Re = 3000.0 / (rhol * pow(d,1.5) * sqrt(gcc));
+  rhoRatio = rhol / rhog;
+  muRatio = 1.0;
+
   /* platform->app->bc->o_usrwrk.resize(mesh->Nlocal); */
 }
 

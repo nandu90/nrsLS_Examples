@@ -15,31 +15,6 @@
   }
 }
 
-@kernel void fillProp(const dlong N,
-                      const dlong offset,
-                      @ restrict const dfloat *PSI,
-                      @ restrict dfloat *PROPS)
-{
-  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
-    dfloat psi = PSI[n];
-    psi = fmin(1.0, psi);
-    psi = fmax(0.0, psi);
-
-    const dfloat At = 0.5;
-    const dfloat Re = 3000.0;
-    const dfloat rhog = 1.0;
-    const dfloat rhol = (1.0 + At) * rhog / (1.0 - At);
-
-    const dfloat gcc = 2.0;
-    const dfloat d = 1.0;
-
-    const dfloat mu = rhol * pow(d,1.5) * sqrt(gcc) / Re;
-
-    PROPS[n + 0 * offset] = mu;
-    PROPS[n + 1 * offset] = rhol * psi + rhog * (1.0 - psi);
-  }
-}
-
 void udfDirichlet(bcData *bc)
 {
   if(isField("clsr")) {
