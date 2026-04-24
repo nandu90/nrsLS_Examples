@@ -45,7 +45,7 @@
 
 void udfDirichlet(bcData *bc)
 {
-  if(isField("scalar cls")) {
+  if(isField("scalar cls") || isField("clsr")) {
     bc->sScalar = 1.0;
   }
 }

@@ -23,8 +23,8 @@ equation = navierStokes+variableViscosity
 
 [FLUID VELOCITY]
 boundaryTypeMap = zeroDirichlet
-#regularization = svv+svvCoeff=1.0+filterPower=4.0 + hpfrt+nModes=1+scalingCoeff=10
-regularization = hpfrt+nModes=1+scalingCoeff=10
+regularization = svv+svvCoeff=1.0+filterPower=4.0 + hpfrt+nModes=1+scalingCoeff=10
+#regularization = hpfrt+nModes=1+scalingCoeff=10
 residualTol = 1e-6
 density = 1.0
 viscosity = -5600.0
@@ -38,7 +38,7 @@ boundaryTypeMap = udfNeumann
 residualTol = 1e-6
 
 [SCALAR TLS]
-solver = none
+#solver = none
 boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -46,7 +46,7 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [SCALAR CLS]
-solver = none
+#solver = none
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -54,16 +54,15 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [TLSR]
-solver = none
 solveFrequency = 0.01
 regularization = svv+svvCoeff=2.0+filterPower=6.0
 residualTol = 1e-8
 
 [CLSR]
-solver = none
+#solver = none
 solveFrequency = 0.001
 regularization = svv+svvCoeff=1.0+filterPower=4.0
 residualTol = 1e-8
 
 [LVLSET]
-interfaceWidthFactor = 1.0
+interfaceWidthFactor = 1.5

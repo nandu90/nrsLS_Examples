@@ -15,7 +15,7 @@ static dfloat Re, We, Fr;
 static dfloat rhoRatio, muRatio;
 
 static const dfloat voidFraction = 0.03;
-static const dfloat betam = 1.8;
+static const dfloat betam = 1.3;
 
 void uservp(double time)
 {
