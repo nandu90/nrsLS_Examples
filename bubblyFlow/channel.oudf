@@ -12,7 +12,7 @@
     const dfloat y = Y[n];
     const dfloat z = Z[n];
 
-    dfloat phi = -1e20;
+    dfloat phi = 1e20;
 
     for (dlong b = 0; b < nBubbles; ++b) {
       const dfloat xc = coord[b * 3 + 0];
@@ -24,9 +24,9 @@
       const dfloat dz = z - zc;
 
       const dfloat dist = sqrt(dx * dx + dy * dy + dz * dz);
-      const dfloat phib = rBubble - dist;
+      const dfloat phib = dist - rBubble;
 
-      phi = fmax(phi, phib);
+      phi = fmin(phi, phib);
     }
 
     S[n] = phi;
@@ -46,7 +46,7 @@
 void udfDirichlet(bcData *bc)
 {
   if(isField("scalar cls")) {
-    bc->sScalar = 0.0;
+    bc->sScalar = 1.0;
   }
 }
 
