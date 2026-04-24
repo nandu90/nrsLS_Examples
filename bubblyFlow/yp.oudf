@@ -1,0 +1,190 @@
+
+#define REDUCE(bs)							\
+  if (t < bs) {								\
+    s_min[t] = fmin(s_min[t + bs], s_min[t]);				\
+    s_max[t] = fmax(s_max[t + bs], s_max[t]);				\
+    s_sum[t] += s_sum[t + bs];						\
+  }
+
+#include <cstdio>
+
+@kernel void yplusKernel(const dlong Nelements,
+			 const dlong offset,
+			 const dlong nbID,
+			 const dlong *bID,
+			 const dlong iffld,
+			 @ restrict const dfloat *sgeo,
+			 @ restrict const dlong *vmapM,
+			 @ restrict const int *EToBM,
+			 @ restrict const dfloat *RHO,
+			 @ restrict const dfloat *MUE,
+			 @ restrict const dfloat *SIJ,
+			 @ restrict const dfloat *YWD,
+			 @ restrict dfloat *YP,
+			 @ restrict dfloat *MINY,
+			 @ restrict dfloat *MAXY,
+			 @ restrict dfloat *SUMY)
+{
+  for (dlong e = 0; e < Nelements; e++; @outer(0)) {
+    @shared dfloat s_min[p_blockSize];
+    @shared dfloat s_max[p_blockSize];
+    @shared dfloat s_sum[p_blockSize];
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      s_min[t] = 1e9;
+      s_max[t] = -1e9;
+      s_sum[t] = 0.0;
+      
+      if (t < p_Nfp) {
+        for (int f = 0; f < p_Nfaces; f++) {
+          const dlong bIDM = EToBM[f + p_Nfaces * e];
+	  
+          for (int ibID = 0; ibID < nbID; ibID++) {
+            if (bIDM == bID[ibID]) {
+              const int n = t + f * p_Nfp;
+              const dlong sid = e * p_Nfaces * p_Nfp + n;
+
+              const dlong idM = vmapM[sid];
+              const dfloat sWJ = sgeo[sid * p_Nsgeo + p_WSJID];
+
+              const dfloat n1 = sgeo[sid * p_Nsgeo + p_NXID];
+              const dfloat n2 = sgeo[sid * p_Nsgeo + p_NYID];
+              const dfloat n3 = sgeo[sid * p_Nsgeo + p_NZID];
+
+              const dfloat t1x = sgeo[sid * p_Nsgeo + p_T1XID];
+              const dfloat t1y = sgeo[sid * p_Nsgeo + p_T1YID];
+              const dfloat t1z = sgeo[sid * p_Nsgeo + p_T1ZID];
+
+              const dfloat t2x = sgeo[sid * p_Nsgeo + p_T2XID];
+              const dfloat t2y = sgeo[sid * p_Nsgeo + p_T2YID];
+              const dfloat t2z = sgeo[sid * p_Nsgeo + p_T2ZID];
+
+              const dfloat s11 = SIJ[idM + 0 * offset];
+              const dfloat s21 = SIJ[idM + 1 * offset];
+              const dfloat s31 = SIJ[idM + 2 * offset];
+
+              const dfloat s12 = s21;
+              const dfloat s22 = SIJ[idM + 3 * offset];
+              const dfloat s32 = SIJ[idM + 4 * offset];
+
+              const dfloat s13 = s31;
+              const dfloat s23 = s32;
+              const dfloat s33 = SIJ[idM + 5 * offset];
+
+              const dfloat rho = RHO[idM];
+              const dfloat mue = MUE[idM];
+
+              const dfloat scale = -2 * mue;
+
+              // viscous drag
+              const dfloat drgx = scale*(s11 * n1 + s12 * n2 + s13 * n3);
+              const dfloat drgy = scale*(s21 * n1 + s22 * n2 + s23 * n3);
+              const dfloat drgz = scale*(s31 * n1 + s32 * n2 + s33 * n3);
+
+              // Drag force along tangent and bi-tangent
+              const dfloat drgt1 = drgx * t1x + drgy * t1y + drgz * t1z;
+              const dfloat drgt2 = drgx * t2x + drgy * t2y + drgz * t2z;
+
+              const dfloat tauw = sqrt(drgt1 * drgt1 + drgt2 * drgt2);
+
+              const dfloat utau = sqrt(tauw / rho);
+	 	      
+              dlong istride = 0;
+              if(f==0){
+                istride = p_Nq * p_Nq;   //-z face
+              }
+              else if(f==1){             //-y face
+                istride = p_Nq;
+              }
+              else if(f==2){             //x face
+                istride = -1;
+              }
+              else if(f==3){             //y face
+                istride = -p_Nq;
+              }
+              else if(f==4){             //-x face
+                istride = 1 ;
+              }
+              else{
+                istride = -p_Nq * p_Nq;  //z face
+              }
+	      
+              const dlong idInterior = idM + istride;
+              const dfloat ywd = YWD[idInterior];
+
+              if(ywd > 1e-8) { //avoids GLL on wall corners
+                if(utau > 1e-8) { // S_ij = 0 at some GLL - possible bug in strainRate calc
+                  const dfloat yplus = ywd * utau * rho / mue;
+
+                  if(iffld) YP[idM] = yplus;
+
+                  s_min[t] = fmin(s_min[t], yplus);
+                  s_max[t] = fmax(s_max[t], yplus);
+                  s_sum[t] += yplus * sWJ;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    @barrier();
+
+#if p_blockSize > 512
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(512);
+    }
+    @barrier();
+#endif
+
+#if p_blockSize > 256
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(256);
+    }
+    @barrier();
+#endif
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(128);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(64);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(32);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(16);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(8);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(4);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      REDUCE(2);
+    }
+    @barrier();
+
+    for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
+      if (t < 1) {
+        MINY[e] = fmin(s_min[0], s_min[1]);
+        MAXY[e] = fmax(s_max[0], s_max[1]);
+        SUMY[e] = s_sum[0] + s_sum[1];
+      }
+    }
+    @barrier();
+  }
+}

@@ -1,0 +1,122 @@
+#include "lvlSet.hpp"
+#include <cmath>
+
+#include "yp.inc"
+#include "bubbleGen.inc"
+
+#ifdef __okl__
+
+#include "yp.oudf"
+#include "channel.oudf"
+
+#endif
+
+static dfloat Re, We, Fr;
+static dfloat rhoRatio, muRatio;
+
+static const dfloat voidFraction = 0.03;
+static const dfloat betam = 1.8;
+
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+}
+
+void userf(double time)
+{
+  auto mesh = nrs->meshV;
+
+  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
+
+  platform->linAlg->add(mesh->Nlocal, 
+                        -1.0 / Fr,
+                        nrs->fluid->o_EXT,
+                        0 * nrs->fluid->fieldOffset);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  // options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
+
+  auto mesh = nrs->meshV;
+
+  dfloat pi = M_PI;
+  platform->linAlg->rescale(-pi, pi, mesh->o_x, platform->comm.mpiComm()); 
+  platform->linAlg->rescale(-1.0, 1.0, mesh->o_y, platform->comm.mpiComm()); 
+  nearWallStretching(mesh->Nlocal, betam, mesh->o_y);
+  platform->linAlg->rescale(-pi/2.0, pi/2.0, mesh->o_z, platform->comm.mpiComm()); 
+
+  lvlSet::setup();
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    dfloat bubbleRad = 0.3 / 2.0;
+    dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
+
+    int nBubbles = voidFraction * mesh->volume / bubbleVol;
+
+    auto xmin = platform->linAlg->min(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+    auto xmax = platform->linAlg->max(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+    auto ymin = platform->linAlg->min(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+    auto ymax = platform->linAlg->max(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+    auto zmin = platform->linAlg->min(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+    auto zmax = platform->linAlg->max(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+
+    std::vector<dfloat> bubbleCoord;
+
+    if(platform->comm.mpiRank() == 0) {
+      bubbleCoord = generateBubbleCenters(nBubbles,
+        bubbleRad,
+        xmin, xmax,
+        ymin, ymax,
+        zmin, zmax,
+        bubbleRad * 2.0,
+        bubbleRad);
+
+      printf("Bubble Coordinates:\n");
+      for (int i=0; i< nBubbles; i++) {
+        const int id = i * 3;
+        printf("%d %.8e %.8e %.8e\n", i+1, bubbleCoord[id], bubbleCoord[id+1], bubbleCoord[id+2]);
+      }
+    } 
+    else {
+      bubbleCoord.resize(3 * nBubbles);
+    }
+    MPI_Bcast(bubbleCoord.data(), 3 * nBubbles, MPI_DFLOAT, 0, platform->comm.mpiComm());
+
+    auto o_bubbleCoord = platform->deviceMemoryPool.reserve<dfloat>(bubbleCoord.size());
+    o_bubbleCoord.copyFrom(bubbleCoord.data());
+
+    auto o_tls = nrs->scalar->o_solution("tls");
+    tlsic(mesh->Nlocal, 
+          nBubbles,
+          bubbleRad,
+          o_bubbleCoord,
+          mesh->o_x,
+          mesh->o_y,
+          mesh->o_z,
+          o_tls);
+
+    auto o_cls = nrs->scalar->o_solution("cls");
+    lvlSet::initHeaviside(o_tls, o_cls);
+  }
+
+  rhoRatio = 40.0;
+  muRatio = 6.07; 
+
+  Re = 5600.0;
+  Fr = 4.35;
+  We = 174.22;
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  y_p(time);
+  lvlSet::solve(time);
+}

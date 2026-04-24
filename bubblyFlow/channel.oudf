@@ -1,0 +1,58 @@
+@kernel void tlsic(const dlong N,
+                   const dlong nBubbles,
+                   const dfloat rBubble,
+                   @ restrict const dfloat *coord,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict const dfloat *Z,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    const dfloat z = Z[n];
+
+    dfloat phi = -1e20;
+
+    for (dlong b = 0; b < nBubbles; ++b) {
+      const dfloat xc = coord[b * 3 + 0];
+      const dfloat yc = coord[b * 3 + 1];
+      const dfloat zc = coord[b * 3 + 2];
+
+      const dfloat dx = x - xc;
+      const dfloat dy = y - yc;
+      const dfloat dz = z - zc;
+
+      const dfloat dist = sqrt(dx * dx + dy * dy + dz * dz);
+      const dfloat phib = rBubble - dist;
+
+      phi = fmax(phi, phib);
+    }
+
+    S[n] = phi;
+  }
+}
+
+@kernel void nearWallStretching(const dlong N,
+                                const dfloat betam,
+                                @ restrict dfloat *Y)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat y = Y[n];
+    Y[n] = tanh(betam * y) / tanh(betam);
+  }
+}
+
+void udfDirichlet(bcData *bc)
+{
+  if(isField("scalar cls")) {
+    bc->sScalar = 0.0;
+  }
+}
+
+void udfNeumann(bcData *bc)
+{
+  if(isField("scalar temperature")) {
+    bc->fluxScalar = 1.0;
+  }
+}
