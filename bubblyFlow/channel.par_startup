@@ -1,37 +1,36 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = channel.fld
+#startFrom = dam.fld
 polynomialOrder = 5
 stopAt = endTime
-endTime = 20
+endTime = 10
 #stopAt = numSteps
 #numSteps = 1
-dt = initial=1.0e-5+targetCFL=0.2+max=1.0e-3
+dt = initial=1.0e-4+targetCFL=0.5
 #dt = 1.25e-4
 timeStepper = tombo2
 
 constFlowRate = meanVelocity=1.0 + direction=X
 
-#checkpointControl = simulationTime
-checkPointInterval = 500
+checkpointControl = simulationTime
+checkPointInterval = 1
 
 scalars = temperature, tls, cls
-
 
 [PROBLEMTYPE]
 equation = navierStokes+variableViscosity
 
 [FLUID VELOCITY]
 boundaryTypeMap = zeroDirichlet
-regularization = svv+svvCoeff=1.0+filterPower=6.0 + hpfrt+nModes=1+scalingCoeff=10
-#regularization = hpfrt+nModes=1+scalingCoeff=10
-residualTol = 1e-8
+#regularization = svv+svvCoeff=1.0+filterPower=4.0 + hpfrt+nModes=1+scalingCoeff=10
+regularization = hpfrt+nModes=1+scalingCoeff=10
+residualTol = 1e-6
 density = 1.0
 viscosity = -5600.0
 
 [FLUID PRESSURE]
-residualTol = 1e-8
+residualTol = 1e-4
 
 [SCALAR TEMPERATURE]
 solver = none
@@ -39,31 +38,32 @@ boundaryTypeMap = udfNeumann
 residualTol = 1e-6
 
 [SCALAR TLS]
+solver = none
 boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
-residualTol = 1e-6
+residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [SCALAR CLS]
+solver = none
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
-residualTol = 1e-6
+residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [TLSR]
-solveFrequency = 0.05
+solver = none
+solveFrequency = 1.0
 regularization = svv+svvCoeff=2.0+filterPower=6.0
-residualTol = 1e-6
-maximumSteps = 200
+residualTol = 1e-8
 
 [CLSR]
-solveFrequency = 0.005
-targetCFL = 0.2
-maximumSteps = 10
+solver = none
+solveFrequency = 0.001
 regularization = svv+svvCoeff=1.0+filterPower=4.0
-residualTol = 1e-6
+residualTol = 1e-8
 
 [LVLSET]
 interfaceWidthFactor = 1.5

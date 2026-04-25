@@ -28,16 +28,18 @@ void userf(double time)
 
   lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
 
+  /*
   platform->linAlg->add(mesh->Nlocal, 
                         -1.0 / Fr,
                         nrs->fluid->o_EXT,
                         0 * nrs->fluid->fieldOffset);
+  */
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
-  // options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
-  // options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  //options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }
 
@@ -111,6 +113,6 @@ void UDF_Setup()
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  y_p(time);
+  // y_p(time);
   lvlSet::solve(time);
 }
