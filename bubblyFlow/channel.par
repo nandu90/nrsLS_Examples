@@ -3,10 +3,10 @@ userSections = tlsr, clsr, lvlset
 [GENERAL]
 #startFrom = dam.fld
 polynomialOrder = 5
-#stopAt = endTime
-#endTime = 10
-stopAt = numSteps
-numSteps = 1
+stopAt = endTime
+endTime = 10
+#stopAt = numSteps
+#numSteps = 1
 dt = initial=1.0e-4+targetCFL=0.5
 #dt = 1.25e-4
 timeStepper = tombo2
@@ -38,7 +38,7 @@ boundaryTypeMap = udfNeumann
 residualTol = 1e-6
 
 [SCALAR TLS]
-#solver = none
+solver = none
 boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -46,7 +46,7 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [SCALAR CLS]
-#solver = none
+solver = none
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -54,12 +54,13 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [TLSR]
-solveFrequency = 0.01
+solver = none
+solveFrequency = 1.0
 regularization = svv+svvCoeff=2.0+filterPower=6.0
 residualTol = 1e-8
 
 [CLSR]
-#solver = none
+solver = none
 solveFrequency = 0.001
 regularization = svv+svvCoeff=1.0+filterPower=4.0
 residualTol = 1e-8
