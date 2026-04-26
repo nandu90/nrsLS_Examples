@@ -42,7 +42,7 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [TLSR]
-solveFrequency = 0.025
+solveFrequency = 0.0125
 regularization = svv+svvCoeff=2.0+filterPower=6.0
 residualTol = 1e-8
 
