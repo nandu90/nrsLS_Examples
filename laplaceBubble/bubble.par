@@ -1,0 +1,52 @@
+userSections = tlsr, clsr, lvlset
+
+[OCCA]
+backend = CUDA
+
+[GENERAL]
+polynomialOrder = 5
+stopAt = numSteps
+numSteps = 500
+dt = 1e-4
+timeStepper = tombo2
+checkpointControl = steps
+checkPointInterval = 50
+scalars = tls, cls
+
+[PROBLEMTYPE]
+equation = navierStokes+variableViscosity
+
+[FLUID VELOCITY]
+boundaryTypeMap = zeroDirichlet
+regularization = svv+svvCoeff=1.0+filterPower=4.0
+residualTol = 1e-10
+
+[FLUID PRESSURE]
+residualTol = 1e-10
+
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-12
+regularization = svv+svvCoeff=0.1+filterPower=2.0
+
+[SCALAR CLS]
+boundaryTypeMap = zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-12
+regularization = svv+svvCoeff=0.1+filterPower=2.0
+
+[TLSR]
+solveFrequency = 1e9
+regularization = svv+svvCoeff=2.0+filterPower=6.0
+residualTol = 1e-12
+
+[CLSR]
+solveFrequency = 1e9
+regularization = svv+svvCoeff=2.0+filterPower=6.0
+residualTol = 1e-12
+
+[LVLSET]
+interfaceWidthFactor = 1.0

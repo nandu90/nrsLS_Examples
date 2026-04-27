@@ -1,0 +1,11 @@
+-3                     spatial dimension  ( < 0 --> generate .rea/.re2 pair)
+1                      number of fields
+#
+#  3D static Laplace bubble test
+#
+Box
+-16 -16 -16                              nelx,nely,nelz
+-1.0 1.0 1.                              x0,x1,ratio
+-1.0 1.0 1.                              y0,y1,ratio
+-1.0 1.0 1.                              z0,z1,ratio
+W  ,W  ,W  ,W  ,W  ,W                   BC's, 3 chars each
