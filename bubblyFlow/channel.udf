@@ -11,11 +11,12 @@
 
 #endif
 
-static dfloat Re, We, Fr;
+static dfloat Re, We, Fr, Re_tau;
 static dfloat rhoRatio, muRatio;
+static dfloat rhol, mul, rhog, mug;
 
 static const dfloat voidFraction = 0.03;
-static const dfloat betam = 1.5;
+static const dfloat betam = 1.2;
 
 void uservp(double time)
 {
@@ -28,12 +29,23 @@ void userf(double time)
 
   lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
 
-  /*
   platform->linAlg->add(mesh->Nlocal, 
                         -1.0 / Fr,
                         nrs->fluid->o_EXT,
                         0 * nrs->fluid->fieldOffset);
-  */
+
+  auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
+  auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+  platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
+
+  auto o_fx = nrs->fluid->o_EXT.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
+  platform->linAlg->axpby(mesh->Nlocal, 
+                          1.0,
+                          o_dpdx,
+                          1.0,
+                          o_fx);
+
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -101,18 +113,31 @@ void UDF_Setup()
 
     auto o_cls = nrs->scalar->o_solution("cls");
     lvlSet::initHeaviside(o_tls, o_cls);
+
+    auto o_ux = nrs->fluid->o_U.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
+    auto o_uy = nrs->fluid->o_U.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+    auto o_uz = nrs->fluid->o_U.slice(2 * nrs->fluid->fieldOffset, mesh->Nlocal);
+
+    platform->linAlg->fill(mesh->Nlocal, 1.0, o_ux);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_uy);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_uz);
   }
 
+  rhol = 1.0;
+  mul = 1.0;
   rhoRatio = 40.0;
   muRatio = 6.07; 
+  rhog = rhol / rhoRatio;
+  mug = mul / muRatio;
 
   Re = 5600.0;
   Fr = 4.35;
   We = 174.22;
+  Re_tau = 280.0;
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  // y_p(time);
+  y_p(time);
   lvlSet::solve(time);
 }
