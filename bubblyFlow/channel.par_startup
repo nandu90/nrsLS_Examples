@@ -1,19 +1,20 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-#startFrom = channel.fld
+startFrom = channel.fld1+time=0
 polynomialOrder = 9
 stopAt = endTime
 endTime = 20
 #stopAt = numSteps
 #numSteps = 2000
-dt = initial=1.0e-5+targetCFL=0.2+max=1.0e-3
+dt = initial=1.0e-5+targetCFL=0.8+max=5.0e-3
 #dt = 1.0e-4
 timeStepper = tombo2
 
 checkpointControl = simulationTime
 checkPointInterval = 2
 
+#constFlowRate = meanVelocity=1.0+direction=X
 scalars = temperature, tls, cls
 
 [PROBLEMTYPE]
@@ -21,11 +22,11 @@ scalars = temperature, tls, cls
 
 [FLUID VELOCITY]
 boundaryTypeMap = zeroDirichlet
-regularization = svv+svvCoeff=1.0+filterPower=4.0 + hpfrt+nModes=1+scalingCoeff=10
+regularization = svv+svvCoeff=1.0+filterPower=4.0 #+ hpfrt+nModes=1+scalingCoeff=10
 #regularization = hpfrt+nModes=1+scalingCoeff=10
 residualTol = 1e-8
 density = 1.0
-viscosity = -5600.0
+viscosity = -2800.0
 
 [FLUID PRESSURE]
 residualTol = 1e-4
@@ -54,7 +55,7 @@ regularization = svv+svvCoeff=1.0+filterPower=2.0
 [TLSR]
 solver = none
 solveFrequency = 0.05
-regularization = svv+svvCoeff=2.0+filterPower=6.0
+regularization = svv+svvCoeff=2.0+filterPower=4.0
 residualTol = 1e-8
 #maximumSteps = 200
 

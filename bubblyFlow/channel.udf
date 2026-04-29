@@ -16,11 +16,11 @@ static dfloat rhoRatio, muRatio;
 static dfloat rhol, mul, rhog, mug;
 
 static const dfloat voidFraction = 0.03;
-static const dfloat betam = 1.2;
+static const dfloat betam = 1.5;
 
 void uservp(double time)
 {
-  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+  lvlSet::updateProperties(rhoRatio, muRatio, Re/2.0);
 }
 
 void userf(double time)
@@ -29,17 +29,18 @@ void userf(double time)
 
   lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
 
-  platform->linAlg->add(mesh->Nlocal, 
-                        -1.0 / Fr,
-                        nrs->fluid->o_EXT,
-                        0 * nrs->fluid->fieldOffset);
+  /* platform->linAlg->add(mesh->Nlocal, */ 
+  /*                       -1.0 / Fr, */
+  /*                       nrs->fluid->o_EXT, */
+  /*                       0 * nrs->fluid->fieldOffset); */
 
+  auto o_fx = nrs->fluid->o_EXT.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
   auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
+
   auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
   auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
   platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
 
-  auto o_fx = nrs->fluid->o_EXT.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
   platform->linAlg->axpby(mesh->Nlocal, 
                           1.0,
                           o_dpdx,
@@ -50,7 +51,7 @@ void userf(double time)
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
-  //options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
   //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }

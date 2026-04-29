@@ -94,6 +94,10 @@ void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::me
   auto o_mind = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
   auto o_maxd = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
   auto o_sumd = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+
+  auto o_minut = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+  auto o_maxut = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+  auto o_sumut = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
   
   if(iffld) o_yp.resize(nrs->meshV->Nlocal); 
   
@@ -112,7 +116,10 @@ void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::me
 	      o_yp,
 	      o_mind,
 	      o_maxd,
-	      o_sumd);
+	      o_sumd,
+	      o_minut,
+	      o_maxut,
+	      o_sumut);
 
   static std::vector<dfloat> tmp;
   if (tmp.size() < o_sumd.size()) {
@@ -132,8 +139,19 @@ void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::me
   o_maxd.copyTo(tmp.data());
   const dfloat maxd = reduce_max(tmp, mesh->Nelements);
 
-  if(platform->comm.mpiRank() == 0)
-    std::cout << std::scientific << "\n      y+ min: " << mind <<" max: "<< maxd <<" avg: "<< sumd/areaWall<<"\n\n";
+  o_sumut.copyTo(tmp.data());
+  const dfloat sumut = reduce_sum(tmp, mesh->Nelements);
+
+  o_minut.copyTo(tmp.data());
+  const dfloat minut = reduce_min(tmp, mesh->Nelements);
+
+  o_maxut.copyTo(tmp.data());
+  const dfloat maxut = reduce_max(tmp, mesh->Nelements);
+
+  if(platform->comm.mpiRank() == 0) {
+    std::cout << std::scientific << "\n      y+ min: " << mind <<" max: "<< maxd <<" avg: "<< sumd/areaWall<<"\n";
+    std::cout << std::scientific << "      utau min: " << minut <<" max: "<< maxut <<" avg: "<< sumut/areaWall<<"\n\n";
+  }
 
   if(iffld){
     if(!ypWriter) {

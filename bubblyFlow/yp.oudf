@@ -1,9 +1,12 @@
 
 #define REDUCE(bs)							\
-  if (t < bs) {								\
-    s_min[t] = fmin(s_min[t + bs], s_min[t]);				\
-    s_max[t] = fmax(s_max[t + bs], s_max[t]);				\
-    s_sum[t] += s_sum[t + bs];						\
+  if (t < bs) {							\
+    s_min[t] = fmin(s_min[t + bs], s_min[t]);			\
+    s_max[t] = fmax(s_max[t + bs], s_max[t]);			\
+    s_sum[t] += s_sum[t + bs];					\
+    s_utmin[t] = fmin(s_utmin[t + bs], s_utmin[t]);		\
+    s_utmax[t] = fmax(s_utmax[t + bs], s_utmax[t]);		\
+    s_utsum[t] += s_utsum[t + bs];					\
   }
 
 #include <cstdio>
@@ -23,17 +26,26 @@
 			 @ restrict dfloat *YP,
 			 @ restrict dfloat *MINY,
 			 @ restrict dfloat *MAXY,
-			 @ restrict dfloat *SUMY)
+			 @ restrict dfloat *SUMY,
+			 @ restrict dfloat *MINUTAU,
+			 @ restrict dfloat *MAXUTAU,
+			 @ restrict dfloat *SUMUTAU)
 {
   for (dlong e = 0; e < Nelements; e++; @outer(0)) {
     @shared dfloat s_min[p_blockSize];
     @shared dfloat s_max[p_blockSize];
     @shared dfloat s_sum[p_blockSize];
+    @shared dfloat s_utmin[p_blockSize];
+    @shared dfloat s_utmax[p_blockSize];
+    @shared dfloat s_utsum[p_blockSize];
 
     for (int t = 0; t < p_blockSize; ++t; @inner(0)) {
       s_min[t] = 1e9;
       s_max[t] = -1e9;
       s_sum[t] = 0.0;
+      s_utmin[t] = 1e9;
+      s_utmax[t] = -1e9;
+      s_utsum[t] = 0.0;
       
       if (t < p_Nfp) {
         for (int f = 0; f < p_Nfaces; f++) {
@@ -121,6 +133,9 @@
                   s_min[t] = fmin(s_min[t], yplus);
                   s_max[t] = fmax(s_max[t], yplus);
                   s_sum[t] += yplus * sWJ;
+                  s_utmin[t] = fmin(s_utmin[t], utau);
+                  s_utmax[t] = fmax(s_utmax[t], utau);
+                  s_utsum[t] += utau * sWJ;
                 }
               }
             }
@@ -183,6 +198,9 @@
         MINY[e] = fmin(s_min[0], s_min[1]);
         MAXY[e] = fmax(s_max[0], s_max[1]);
         SUMY[e] = s_sum[0] + s_sum[1];
+        MINUTAU[e] = fmin(s_utmin[0], s_utmin[1]);
+        MAXUTAU[e] = fmax(s_utmax[0], s_utmax[1]);
+        SUMUTAU[e] = s_utsum[0] + s_utsum[1];
       }
     }
     @barrier();
