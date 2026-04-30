@@ -1,0 +1,75 @@
+#include "lvlSet.hpp"
+#include "ci.inc"
+
+#ifdef __okl__
+
+#include "bubble.oudf"
+
+#endif
+
+static dfloat bubbleRadius = 0.40;
+static dfloat Re = 1000.0;
+static dfloat We = 1.0;
+static dfloat rhoRatio = 1.0;
+static dfloat muRatio = 1.0;
+static dfloat deltaP;
+
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+}
+
+void userf(double time)
+{
+  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  options.getArgs("CI-MODE", ciMode);
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
+
+  auto mesh = nrs->meshV;
+
+  lvlSet::setup();
+
+  if (ciMode) {
+    ciSetup(platform->comm.mpiComm(), platform->options);
+  }
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    // initialize exact signed-distance field for a spherical interface
+    udfic(mesh->Nlocal, bubbleRadius, mesh->o_x, mesh->o_y, mesh->o_z, o_tls);
+    lvlSet::initHeaviside(o_tls, o_cls);
+  }
+
+  deltaP = 2.0 / (We * bubbleRadius); // nondimensional Young–Laplace pressure jump for a 3D spherical bubble
+  if (platform->comm.mpiRank() == 0) {
+    printf("Static Laplace Bubble test\n");
+    printf("  R              : %.16e\n", bubbleRadius);
+    printf("  We             : %.16e\n", We);
+    printf("  rhoRatio       : %.16e\n", rhoRatio);
+    printf("  muRatio        : %.16e\n", muRatio);
+    printf("  expected dp    : %.16e  # 2/(We*R)\n", deltaP);
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  lvlSet::solve(time);
+
+  if (ciMode && nrs->lastStep) {
+    ciTestErrors(time, tstep, deltaP);
+  }
+}

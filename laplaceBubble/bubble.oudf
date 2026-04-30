@@ -1,0 +1,38 @@
+@kernel void udfic(const dlong N,
+                   const dfloat R,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict const dfloat *Z,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    const dfloat z = Z[n];
+    const dfloat r = sqrt(x * x + y * y + z * z);
+    S[n] = r - R;
+  }
+}
+
+@kernel void clsPressureMasks(const dlong N,
+                              const dfloat threshold,
+                              @ restrict const dfloat *cls,
+                              @ restrict dfloat *insideMask,
+                              @ restrict dfloat *outsideMask)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat c = cls[n];
+    insideMask[n]  = c < threshold  ? 1.0 : 0.0;
+    outsideMask[n] = c > (1.0-threshold) ? 1.0 : 0.0;
+  }
+}
+
+@kernel void maskedPressure(const dlong N,
+                            @ restrict const dfloat *P,
+                            @ restrict const dfloat *mask,
+                            @ restrict dfloat *Pm)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    Pm[n] = P[n] * mask[n];
+  }
+}
