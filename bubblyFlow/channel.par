@@ -1,13 +1,13 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = channel.fld2+time=0
+startFrom = channel.fld1
 polynomialOrder = 9
 stopAt = endTime
 endTime = 10
 #stopAt = numSteps
 #numSteps = 2000
-dt = initial=1.0e-5+targetCFL=0.4+max=1.0e-4
+dt = initial=1.0e-5+targetCFL=0.4+max=2.0e-4
 #dt = 1.0e-4
 timeStepper = tombo2
 
@@ -51,14 +51,15 @@ residualTol = 1e-8
 regularization = svv+svvCoeff=1.0+filterPower=2.0
 
 [TLSR]
-solveFrequency = 0.01
-regularization = svv+svvCoeff=2.0+filterPower=4.0
+solveFrequency = 0.02
+regularization = svv+svvCoeff=1.0+filterPower=6.0
 residualTol = 1e-8
+targetCFL = 0.4
 maximumSteps = 200
 
 [CLSR]
 boundaryTypeMap = zeroNeumann
-solveFrequency = 0.001
+solveFrequency = 0.002
 targetCFL = 0.2
 maximumSteps = 20
 regularization = svv+svvCoeff=1.0+filterPower=4.0
