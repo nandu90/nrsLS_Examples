@@ -1,7 +1,7 @@
 userSections = tlsr, clsr, lvlset
 
-[OCCA]
-backend = CPU
+#[OCCA]
+#backend = CPU
 
 [GENERAL]
 polynomialOrder = 5
