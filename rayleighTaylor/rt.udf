@@ -46,7 +46,7 @@ void UDF_Setup()
     lvlSet::initHeaviside(o_tls, o_cls);
   }
 
-  const dfloat At = 0.9;
+  const dfloat At = 0.5;
   const dfloat rhog = 1.0;
   const dfloat rhol = (1.0 + At) * rhog / (1.0 - At);
 
