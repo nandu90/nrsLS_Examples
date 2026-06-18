@@ -1,6 +1,3 @@
-[OCCA]
-backend = CUDA
-
 [GENERAL]
 polynomialOrder = 9
 stopAt = endTime
@@ -11,7 +8,7 @@ timeStepper = tombo2
 checkPointControl = simulationTime 
 checkPointInterval = 1e-1
 
-scalars = s00, s01, s02
+scalars = s00, s01
 
 #verbose = true
 
@@ -22,16 +19,10 @@ solver = none
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
 residualTol = 1e-08
-regularization = svv+scalingCoeff=0.1+filterPower=3.0
+regularization = svv+svvCoeff=0.1+filterPower=3.0
 
 [SCALAR S01]
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
 residualTol = 1e-08
 regularization = avm+c0+scalingCoeff=0.1+noiseThreshold=1e-3
-
-[SCALAR S02]
-transportCoeff = 1.0
-diffusionCoeff = 1e-12
-residualTol = 1e-08
-regularization = svv+scalingCoeff=0.1+filterPower=3.0; avm+c0+scalingCoeff=0.1+noiseThreshold=1e-1

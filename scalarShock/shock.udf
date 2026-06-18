@@ -96,7 +96,6 @@ void UDF_Setup()
     nrs->fluid->o_U.copyFrom(U.data(), U.size());
     nrs->scalar->o_solution("s00").copyFrom(sexact.data(), sexact.size()); 
     nrs->scalar->o_solution("s01").copyFrom(sexact.data(), sexact.size()); 
-    nrs->scalar->o_solution("s02").copyFrom(sexact.data(), sexact.size()); 
   }
 }
 
