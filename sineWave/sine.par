@@ -19,7 +19,7 @@ solver = none
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
 residualTol = 1e-08
-regularization = svv+scalingCoeff=0.1+filterPower=3.0
+regularization = svv+svvCoeff=0.1+filterPower=3.0
 
 [SCALAR S01]
 transportCoeff = 1.0
