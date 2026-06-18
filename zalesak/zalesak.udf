@@ -1,16 +1,12 @@
-#include "plugins/svv.hpp"
-
 #ifdef __okl__
 
 #include "zalesak.oudf"
 
 #endif
 
-static bool if2P = false;
-
 void extractLine(double time)
 {
-  const auto np = (platform->comm.mpiRank == 0) ? 10001 : 0;
+  const auto np = (platform->comm.mpiRank() == 0) ? 10001 : 0;
   const auto offset = np;
 
   static pointInterpolation_t *interpolator = nullptr;
@@ -32,14 +28,14 @@ void extractLine(double time)
       o_Sp.resize(nrs->Nscalar * offset);
     }
 
-    interpolator = new pointInterpolation_t(nrs->mesh, platform->comm.mpiComm);
+    interpolator = new pointInterpolation_t(nrs->meshV, platform->comm.mpiComm());
     interpolator->setPoints(xp, yp, zp);
     interpolator->find();
   }
 
-  interpolator->eval(nrs->Nscalar, nrs->fieldOffset, nrs->cds->o_S, offset, o_Sp);
+  interpolator->eval(nrs->Nscalar, nrs->fieldOffset, nrs->scalar->o_S, offset, o_Sp);
 
-  if (platform->comm.mpiRank == 0) {
+  if (platform->comm.mpiRank() == 0) {
     std::vector<dfloat> Sp(nrs->Nscalar * np);
     o_Sp.copyTo(Sp);
 
@@ -57,50 +53,26 @@ void extractLine(double time)
 
 void UDF_Setup()
 {
-  auto mesh = nrs->mesh;
+  auto mesh = nrs->meshV;
 
   if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    auto cds = nrs->cds;
+    auto &scalar = nrs->scalar;
 
     //Average element length
-    auto o_EX = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EX);
-    auto o_EY = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EY);
-    auto o_EZ = platform->device.malloc(mesh->Nverts * mesh->Nelements, mesh->EZ);
+    auto totalel = mesh->Nelements;
+    MPI_Allreduce(MPI_IN_PLACE, &totalel, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm());
+    const dfloat zlength = 1./pow(totalel, 0.5);
+    platform->linAlg->rescale(0.0, zlength, mesh->o_z, platform->comm.mpiComm());
 
-    auto o_deltael = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nelements);
+    udfic(mesh->Nlocal, nrs->fieldOffset, zlength, mesh->o_x, mesh->o_y, nrs->scalar->o_U, nrs->scalar->o_S);
 
-    deltaElement(mesh->Nelements, o_EX, o_EY, o_EZ, o_deltael);
-
-    std::vector<dfloat> tmp(mesh->Nelements);
-    o_deltael.copyTo(tmp.data());
-
-    dfloat deltael = 0.0;
-    for (dlong i = 0; i < mesh->Nelements; i++) {
-       deltael += tmp[i];
-    }
-
-    MPI_Allreduce(MPI_IN_PLACE, &deltael, 1, MPI_DFLOAT, MPI_SUM, platform->comm.mpiComm);
-
-    dlong N = mesh->Nelements;
-    MPI_Allreduce(MPI_IN_PLACE, &N, 1, MPI_DLONG, MPI_SUM, platform->comm.mpiComm);
-
-    deltael /= N;
-
-    deltael = 1./50.;
-
-    udfic(mesh->Nlocal, nrs->fieldOffset, deltael, mesh->o_x, mesh->o_y, nrs->o_U, cds->o_S);
-
-    if(platform->comm.mpiRank == 0)
-      printf("Average element length = %.4e\n",deltael);
+    if(platform->comm.mpiRank() == 0)
+      printf("Average element length = %.4e\n",zlength);
   }
-
-  svv::setup(if2P);
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  svv::solverSetup();
-
   if (nrs->lastStep) {
     extractLine(time);
   }
