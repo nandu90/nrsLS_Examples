@@ -108,7 +108,7 @@ jobs:
       working-directory: build
       run: ctest --output-on-failure -R sineWave
 
-  linear1D:
+  scalarShock:
     needs: install
     runs-on: ubuntu-22.04
     steps:
@@ -137,9 +137,9 @@ jobs:
     - name: Set install dir permissions
       run: chmod -R 755 ${{ env.NEKRS_HOME }}
 
-    - name: 'linear1D'
+    - name: 'scalarShock'
       working-directory: build
-      run: ctest --output-on-failure -R linear1D 
+      run: ctest --output-on-failure -R scalarShock 
 
   circles:
     needs: install
