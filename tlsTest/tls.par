@@ -21,7 +21,7 @@ boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
 residualTol = 1e-14
-regularization = svv+scalingCoeff=2.0+filterPower=6.0
+regularization = svv+svvCoeff=2.0+filterPower=6.0
 
 [SCALAR CLS]
 boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
@@ -29,7 +29,7 @@ solver = none
 transportCoeff = 1.0
 diffusionCoeff = 1e-12
 residualTol = 1e-14
-regularization = svv+scalingCoeff=2.0+filterPower=6.0
+regularization = svv+svvCoeff=2.0+filterPower=6.0
 
 [TLSR]
 residualTol = 1e-14
