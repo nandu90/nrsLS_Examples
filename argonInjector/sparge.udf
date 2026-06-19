@@ -1,0 +1,107 @@
+#include "lvlSet.hpp"
+
+#ifdef __okl__
+#include "sparge.oudf"
+#endif
+
+static dfloat Re, We, Fr;
+static dfloat Eo, Mo, Ca;
+static dfloat rhoRatio, muRatio;
+static dfloat lenScale, velScale;
+static dfloat gdim;
+
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+}
+
+void userf(double time)
+{
+  auto mesh = nrs->meshV;
+
+  // Continuum-surface-force contribution.
+  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
+
+  // Gravity is in the negative z direction.
+  platform->linAlg->add(mesh->Nlocal, 
+                        -1.0 / Fr,
+                        nrs->fluid->o_EXT,
+                        2 * nrs->fluid->fieldOffset);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  /* options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE"); */
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
+
+  auto mesh = nrs->meshV;
+
+  lvlSet::setup();
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+
+    tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y, mesh->o_z, o_tls);
+    lvlSet::initHeaviside(o_tls, o_cls);
+
+  }
+
+  /* // Write the initial condition to file. */
+  /* nrs->writeCheckpoint(0.0, 0); */
+
+  // gravitational acceleration, m/s^2
+  // Length scale: injector diameter D_inj = 5 mm.
+  // Velocity scale: injector velocity U_inj = 0.1 m/s.
+  gdim     = 9.81;
+  lenScale = 5.0e-3;
+  velScale = sqrt(gdim*lenScale); //1.0e-1;
+
+  // Argon (gas) / FLiBe (liquid) properties taken from Li et al. (2026)
+  const dfloat rhol  = 1975.0;   // kg/m^3
+  const dfloat rhog  = 0.5353;   // kg/m^3
+  const dfloat mul   = 7.59e-3;  // Pa.s
+  const dfloat mug   = 5.18e-5;  // Pa.s
+  const dfloat sigma = 0.188;   // N/m
+
+  // nondimensional parameters
+  rhoRatio = rhol / rhog;
+  muRatio  = mul / mug;
+
+  Re = rhol * velScale * lenScale / mul;
+  Fr = velScale * velScale / (gdim * lenScale);
+  We = rhol * velScale * velScale * lenScale / sigma;
+  Eo = (rhol - rhog) * gdim * lenScale * lenScale / sigma;
+  Mo = gdim * pow(mul, 4.0) * (rhol - rhog) / (rhol * rhol * pow(sigma, 3.0));
+  Ca = mul * velScale / sigma;
+
+  if(platform->comm.mpiRank() == 0) {
+    printf("UDF setup complete\n");
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  if(tstep == 1 && platform->comm.mpiRank() == 0) {
+    printf("Bubble NekRS case: FLiNaK/helium injected bubble\n");
+    printf("Reference length D_inj: %.8e m\n", lenScale);
+    printf("Reference velocity U_inj: %.8e m/s\n", velScale);
+    printf("Gravity velocity sqrt(gD): %.8e m/s\n", sqrt(gdim * lenScale));
+    printf("Reynolds Number: %.8e\n", Re);
+    printf("Weber Number: %.8e\n", We);
+    printf("Froude Number: %.8e\n", Fr);
+    printf("Capillary Number: %.8e\n", Ca);
+    printf("Eotvos Number: %.8e\n", Eo);
+    printf("Morton Number: %.8e\n", Mo);
+    printf("Density Ratio rhol/rhog: %.8e\n", rhoRatio);
+    printf("Viscosity Ratio mul/mug: %.8e\n", muRatio);
+  }
+  lvlSet::solve(time);
+}

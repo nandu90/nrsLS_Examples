@@ -1,0 +1,85 @@
+@kernel void tlsic(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict const dfloat *Z,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    const dfloat z = Z[n];
+
+    // domain nondimensional height is 20
+    const dfloat zBottomInterface = 0.0;
+    const dfloat zTopInterface    = 7.0;
+
+    // injector center in nondimensional coordinates
+    const dfloat xc = 2.5;
+    const dfloat yc = 2.5;
+
+    // small initial gas cap above injector/crucible interface
+    const dfloat Rcap = 0.75;
+
+    // lift cap center slightly above the injector lip
+    const dfloat zCapCenter = 0.15;
+
+    const dfloat dx = x - xc;
+    const dfloat dy = y - yc;
+
+    // gas is negative, liquid is positive
+    if (z < zBottomInterface) {
+      // below the crucible/injector interface: all gas
+      S[n] = -Rcap;
+    } else {
+      // hemispherical-ish gas cap above zBottomInterface
+      const dfloat dzCap = z - zCapCenter;
+      const dfloat rCap = sqrt(dx * dx + dy * dy + dzCap * dzCap);
+      const dfloat phiCap = rCap - Rcap;
+
+      // top gas region --> z > zTopInterface
+      const dfloat phiTop = zTopInterface - z;
+
+      // union of cap gas and top gas only
+      S[n] = min(phiCap, phiTop);
+    }
+  }
+}
+
+void udfDirichlet(bcData *bc)
+{
+  if (isField("fluid velocity") && bc->id == 7) {
+    const dfloat xc = 2.5;
+    const dfloat yc = 2.5;
+    const dfloat R  = 0.5;
+
+    const dfloat dx = bc->x - xc;
+    const dfloat dy = bc->y - yc;
+    const dfloat r  = sqrt(dx * dx + dy * dy);
+    const dfloat q  = r / R;
+
+    const dfloat profile = fmax(0.0, 1.0 - q * q);
+
+    // desired area-mean inlet velocity
+    const dfloat uzMean = 0.5;
+
+    // parabolic circular pipe profile: Ucenter = 2 * Umean
+    const dfloat uzCenter = 2.0 * uzMean;
+
+    bc->uxFluid = 0.0;
+    bc->uyFluid = 0.0;
+    bc->uzFluid = uzCenter * profile;
+  }
+
+  /* if(isField("fluid pressure") && bc->id == 6) { */
+  /*   bc->pFluid = 0.0; */
+  /* } */
+
+  if((isField("scalar cls") || isField("clsr")) && bc->id == 7) {
+    bc->sScalar = 0.0;
+  }
+
+  if((isField("scalar cls") || isField("clsr")) && bc->id == 6) {
+    bc->sScalar = 0.0;
+  }
+
+}
