@@ -84,17 +84,12 @@ void UDF_Setup()
 
   if(platform->comm.mpiRank() == 0) {
     printf("UDF setup complete\n");
-  }
-}
-
-void UDF_ExecuteStep(double time, int tstep)
-{
-  if(tstep == 1 && platform->comm.mpiRank() == 0) {
     printf("Bubble NekRS case: FLiNaK/helium injected bubble\n");
     printf("Reference length D_inj: %.8e m\n", lenScale);
     printf("Reference velocity U_inj: %.8e m/s\n", velScale);
     printf("Gravity velocity sqrt(gD): %.8e m/s\n", sqrt(gdim * lenScale));
     printf("Reynolds Number: %.8e\n", Re);
+    printf("Gas Reynolds Number: %.8e\n", rhog * velScale * lenScale / mug);
     printf("Weber Number: %.8e\n", We);
     printf("Froude Number: %.8e\n", Fr);
     printf("Capillary Number: %.8e\n", Ca);
@@ -103,5 +98,9 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Density Ratio rhol/rhog: %.8e\n", rhoRatio);
     printf("Viscosity Ratio mul/mug: %.8e\n", muRatio);
   }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
   lvlSet::solve(time);
 }

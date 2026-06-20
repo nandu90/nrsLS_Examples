@@ -2,6 +2,7 @@ userSections = tlsr, clsr, lvlset
 
 [GENERAL]
 polynomialOrder = 5
+startfrom = sparge.fld
 stopAt = endTime
 endTime = 50
 #stopAt = numSteps
@@ -20,37 +21,37 @@ boundaryTypeMap = none, none, none, none, zeroDirichlet, zeroNeumann, udfDirichl
 residualTol = 1e-6
 density = 1.0
 viscosity = -1.0
-regularization = svv+svvCoeff=1.0+filterPower=4.0
+regularization = svv+svvCoeff=0.1+filterPower=2.0
 
 [FLUID PRESSURE]
-residualTol = 1e-5
+residualTol = 1e-6
 
 [SCALAR TLS]
 boundaryTypeMap = none, none, none, none, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
-residualTol = 1e-8
+residualTol = 1e-6
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
-regularization = svv+svvCoeff=1.0+filterPower=4.0
+regularization = svv+svvCoeff=1.0+filterPower=2.0
 
 [SCALAR CLS]
 boundaryTypeMap = none, none, none, none, zeroNeumann, udfDirichlet, udfDirichlet, zeroNeumann
-residualTol = 1e-8
+residualTol = 1e-6
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
-regularization = svv+svvCoeff=1.0+filterPower=4.0
+regularization = svv+svvCoeff=1.0+filterPower=2.0
 
 [TLSR]
-residualTol = 1e-8
-solveFrequency = 0.01
+residualTol = 1e-6
+solveFrequency = 0.002
 regularization = svv+svvCoeff=2.0+filterPower=6.0
-targetCFL = 0.2
+targetCFL = 0.5
 maximumSteps = 200
 
 [CLSR]
-residualTol = 1e-8
-solveFrequency = 0.001
-regularization = svv+svvCoeff=1.0+filterPower=4.0
-targetCFL = 0.2
+residualTol = 1e-6
+solveFrequency = 0.0002
+regularization = svv+svvCoeff=1.0+filterPower=2.0
+targetCFL = 0.5
 maximumSteps = 20
 
 [LVLSET]
