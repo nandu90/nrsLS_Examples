@@ -8,10 +8,10 @@
 #endif
 
 static dfloat bubbleRadius = 0.40;
-static dfloat Re = 1000.0;
+static dfloat Re = 100.0;
 static dfloat We = 1.0;
-static dfloat rhoRatio = 1.0;
-static dfloat muRatio = 1.0;
+static dfloat rhoRatio = 1000.0;
+static dfloat muRatio = 100.0;
 static dfloat deltaP;
 
 void uservp(double time)
@@ -71,5 +71,23 @@ void UDF_ExecuteStep(double time, int tstep)
 
   if (ciMode && nrs->lastStep) {
     ciTestErrors(time, tstep, deltaP);
+  }
+
+  {
+    auto mesh = nrs->meshV;
+    auto o_umag = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+    platform->linAlg->magVector(mesh->Nlocal, nrs->fluid->fieldOffset, nrs->fluid->o_U, o_umag);
+    auto L2 = platform->linAlg->weightedNorm2(mesh->Nlocal, mesh->o_LMM, o_umag, platform->comm.mpiComm());
+
+    static bool fileCleared = false;
+    if (platform->comm.mpiRank() == 0) {
+      if(!fileCleared) {
+        std::ofstream("rmsVelocity.dat", std::ios::trunc);
+        fileCleared = true;
+      }
+      std::ofstream fout("rmsVelocity.dat", std::ios::app);
+      fout << time << " " << tstep << " " << std::scientific << L2 / sqrt(mesh->volume) << "\n";
+      std::cout <<"time = " << time << " tstep = " << tstep << " RMS velocity norm = " << std::scientific << L2 / sqrt(mesh->volume) << "\n";
+    }
   }
 }
