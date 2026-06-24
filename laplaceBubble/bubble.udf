@@ -10,7 +10,7 @@
 static dfloat bubbleRadius = 0.40;
 static dfloat Re = 100.0;
 static dfloat We = 1.0;
-static dfloat rhoRatio = 1000.0;
+static dfloat rhoRatio = 10000.0;
 static dfloat muRatio = 100.0;
 static dfloat deltaP;
 
