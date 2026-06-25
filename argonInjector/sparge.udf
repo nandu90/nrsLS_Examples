@@ -65,7 +65,7 @@ void UDF_Setup()
   velScale = sqrt(gdim*lenScale); //1.0e-1;
 
   // Argon (gas) / FLiBe (liquid) properties taken from Li et al. (2026)
-  const dfloat rhol  = 19.75;// * 0.1;   // kg/m^3
+  const dfloat rhol  = 1975.0;// * 0.1;   // kg/m^3
   dfloat rhog  = 0.5353;   // kg/m^3
   const dfloat mul   = 7.59e-3;  // Pa.s
   const dfloat mug   = 5.18e-5;  // Pa.s

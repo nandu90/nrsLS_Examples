@@ -2,7 +2,7 @@ userSections = tlsr, clsr, lvlset
 
 [GENERAL]
 polynomialOrder = 5
-#startfrom = sparge.fld
+startfrom = sparge.fld
 stopAt = endTime
 endTime = 10.0
 #stopAt = numSteps
@@ -42,19 +42,18 @@ regularization = svv+scalingCoeff=1.0+filterPower=2.0
 [TLSR]
 residualTol = 1e-6
 solveFrequency = 0.01
-regularization = svv+scalingCoeff=2.0+filterPower=6.0+minPower=5.0
+regularization = svv+scalingCoeff=2.0+filterPower=7.0+minPower=6.0
 targetCFL = 0.5
-maximumSteps = 500
 
 [CLSR]
 residualTol = 1e-6
 solveFrequency = 0.001
 regularization = svv+scalingCoeff=1.0+filterPower=4.0
 targetCFL = 0.5
-maximumSteps = 20
+maximumSteps = 50
 
 [LVLSET]
-interfaceWidthFactor = 1.5
+interfaceWidthFactor = 1.6
 interfaceWidthMesh = max
 #farfield = 1.0
 #farfieldDeltaTol = 1.0e-03

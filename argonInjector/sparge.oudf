@@ -60,7 +60,7 @@ void udfDirichlet(bcData *bc)
     const dfloat profile = fmax(0.0, 1.0 - q * q);
 
     // desired area-mean inlet velocity
-    const dfloat uzMean = 0.5 * 4.0;
+    const dfloat uzMean = 0.5 * 10.0;
 
     // parabolic circular pipe profile: Ucenter = 2 * Umean
     const dfloat uzCenter = 2.0 * uzMean;
