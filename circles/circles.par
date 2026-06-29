@@ -10,7 +10,7 @@ endTime = 4.0
 dt = 1.495e-02
 timeStepper = tombo2
 
-checkPointInterval = 4.0
+checkPointInterval = 0.1
 checkPointControl = simulationTime
 
 scalars = tls, cls
@@ -35,10 +35,10 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 
 [TLSR]
 residualTol = 1e-14
-#checkpointing = true
+checkpointing = true
 distanceFactor = 31.75
 maximumSteps = 10000
-targetCFL = 0.9
+targetCFL = 0.5
 stoppingCondition = targetTime
 regularizationFactor = 1.0
 

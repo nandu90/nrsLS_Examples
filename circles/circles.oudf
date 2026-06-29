@@ -22,6 +22,7 @@ dfloat getExact(const dfloat x, const dfloat y)
 }
 
 @kernel void udfic(const dlong N,
+                   const dlong exact,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
                    @ restrict dfloat *S)
@@ -30,7 +31,8 @@ dfloat getExact(const dfloat x, const dfloat y)
     const dfloat x = X[n];
     const dfloat y = Y[n];
 
-    const dfloat func = pow(x - 1.0, 2.0) + pow(y - 1.0, 2.0) + 0.1;
+    dfloat func = pow(x - 1.0, 2.0) + pow(y - 1.0, 2.0) + 0.1;
+    if(exact) func = 1.0;
 
     S[n] = getExact(x, y) * func; // perturbed signed-distance field
   }

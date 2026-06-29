@@ -2,7 +2,7 @@
 
 static int ciMode = 0;
 
-#define EPS 1.06e-3
+#define EPS 8.57e-4
 
 void ciSetup(MPI_Comm comm, setupAide &options)
 {
