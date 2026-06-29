@@ -35,7 +35,7 @@ regularization = svv+scalingCoeff=2.0+filterPower=6.0
 
 [TLSR]
 residualTol = 1e-14
-checkpointing = true
+#checkpointing = true
 distanceFactor = 31.75
 maximumSteps = 10000
 targetCFL = 0.5
