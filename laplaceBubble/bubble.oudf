@@ -36,3 +36,10 @@
     Pm[n] = P[n] * mask[n];
   }
 }
+
+void udfDirichlet(bcData *bc) 
+{
+  if(isField("scalar cls") || isField("clsr")) {
+    bc->sScalar = 1.0;
+  }
+}

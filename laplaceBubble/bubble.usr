@@ -8,11 +8,8 @@
       do ie=1,nelt
         do ifc=1,2*ndim
           cb3 = cbc(ifc,ie,1)
-          if (cb3 .eq. 'W  ') then
-            cbc(ifc,ie,2) = 'I  '
-            cbc(ifc,ie,3) = 'I  '
+          if (cb3 .eq. 'O  ') then
             boundaryID(ifc,ie) = 1
-            boundaryIDt(ifc,ie) = 1
           endif
         enddo
       enddo

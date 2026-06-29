@@ -4,8 +4,8 @@
 #  3D static Laplace bubble test
 #
 Box
--10 -10 -10                              nelx,nely,nelz
--1.0 1.0 1.                              x0,x1,ratio
--1.0 1.0 1.                              y0,y1,ratio
--1.0 1.0 1.                              z0,z1,ratio
-W  ,W  ,W  ,W  ,W  ,W                   BC's, 3 chars each
+-20 -20 -20                              nelx,nely,nelz
+-2.0 2.0 1.                              x0,x1,ratio
+-2.0 2.0 1.                              y0,y1,ratio
+-2.0 2.0 1.                              z0,z1,ratio
+O  ,O  ,O  ,O  ,O  ,O                   BC's, 3 chars each

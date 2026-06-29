@@ -7,7 +7,7 @@
 
 #endif
 
-static dfloat bubbleRadius = 0.40;
+static dfloat bubbleRadius = 0.5;
 static dfloat Re = 100.0;
 static dfloat We = 1.0;
 static dfloat rhoRatio = 10000.0;
@@ -75,19 +75,25 @@ void UDF_ExecuteStep(double time, int tstep)
 
   {
     auto mesh = nrs->meshV;
-    auto o_umag = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+    auto o_umag = nrs->scalar->o_solution("rms");
     platform->linAlg->magVector(mesh->Nlocal, nrs->fluid->fieldOffset, nrs->fluid->o_U, o_umag);
-    auto L2 = platform->linAlg->weightedNorm2(mesh->Nlocal, mesh->o_LMM, o_umag, platform->comm.mpiComm());
+    auto L2rms = platform->linAlg->weightedNorm2(mesh->Nlocal, mesh->o_LMM, o_umag, platform->comm.mpiComm());
+
+    auto o_divErr = opSEM::strongDivergence(mesh, nrs->fluid->fieldOffset, nrs->fluid->o_U);
+    auto o_div = nrs->scalar->o_solution("divU");
+    o_div.copyFrom(o_divErr, mesh->Nlocal);
+    auto L2div = platform->linAlg->weightedNorm2(mesh->Nlocal, mesh->o_LMM, o_div, platform->comm.mpiComm());
 
     static bool fileCleared = false;
     if (platform->comm.mpiRank() == 0) {
       if(!fileCleared) {
-        std::ofstream("rmsVelocity.dat", std::ios::trunc);
+        std::ofstream("errors.dat", std::ios::trunc);
         fileCleared = true;
       }
-      std::ofstream fout("rmsVelocity.dat", std::ios::app);
-      fout << time << " " << tstep << " " << std::scientific << L2 / sqrt(mesh->volume) << "\n";
-      std::cout <<"time = " << time << " tstep = " << tstep << " RMS velocity norm = " << std::scientific << L2 / sqrt(mesh->volume) << "\n";
+      std::ofstream fout("errors.dat", std::ios::app);
+      fout << time << " " << tstep << " " << std::scientific << L2rms / sqrt(mesh->volume) << " " << L2div / sqrt(mesh->volume) << "\n";
+      std::cout <<"time = " << time << " tstep = " << tstep <<
+        " RMS velocity norm = " << std::scientific << L2rms / sqrt(mesh->volume) << " Div norm = " << std::scientific << L2div / sqrt(mesh->volume) <<  "\n";
     }
   }
 }
