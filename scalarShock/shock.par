@@ -1,6 +1,3 @@
-[OCCA]
-backend = CUDA
-
 [GENERAL]
 polynomialOrder = 9
 stopAt = endTime

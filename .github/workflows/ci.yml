@@ -108,7 +108,7 @@ jobs:
       working-directory: build
       run: ctest --output-on-failure -R sineWave
 
-  linear1D:
+  scalarShock:
     needs: install
     runs-on: ubuntu-22.04
     steps:
@@ -139,7 +139,7 @@ jobs:
 
     - name: 'linear1D'
       working-directory: build
-      run: ctest --output-on-failure -R linear1D 
+      run: ctest --output-on-failure -R scalarShock 
 
   circles:
     needs: install
