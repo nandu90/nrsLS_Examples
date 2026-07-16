@@ -1,10 +1,10 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = channel.fld1
+startFrom = channel.fld
 polynomialOrder = 9
 stopAt = endTime
-endTime = 10
+endTime = 50
 #stopAt = numSteps
 #numSteps = 2000
 dt = initial=1.0e-5+targetCFL=0.4+max=2.0e-4

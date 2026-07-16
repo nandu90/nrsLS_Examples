@@ -29,13 +29,15 @@ void userf(double time)
 
   lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
 
-  /* platform->linAlg->add(mesh->Nlocal, */ 
-  /*                       -1.0 / Fr, */
-  /*                       nrs->fluid->o_EXT, */
-  /*                       0 * nrs->fluid->fieldOffset); */
+  platform->linAlg->add(mesh->Nlocal, 
+                        -1.0 / Fr,
+                        nrs->fluid->o_EXT,
+                        0 * nrs->fluid->fieldOffset);
 
   auto o_fx = nrs->fluid->o_EXT.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
   auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
+
+  dpdx += 1.0 / Fr * rhol; //to maintain Re_tau
 
   auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
   auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
@@ -133,7 +135,7 @@ void UDF_Setup()
 
   Re = 5600.0;
   Fr = 4.35;
-  We = 17.422;
+  We = 174.22;
   Re_tau = 280.0;
 }
 
