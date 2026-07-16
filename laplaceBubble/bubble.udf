@@ -17,17 +17,21 @@ static dfloat deltaP;
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
+  lvlSet::applyPressureGradCorrection(We, nrs->fluid->o_Pgc);
 }
 
 void userf(double time)
 {
-  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
+  auto mesh = nrs->meshV;
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, nrs->fluid->o_EXT);
+  lvlSet::addSurfaceTensionAcc(We, nrs->fluid->o_EXT);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
-  options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING GRAD CORRECTION", "TRUE");
+  /* options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE"); */
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
   options.getArgs("CI-MODE", ciMode);
 }
@@ -63,6 +67,9 @@ void UDF_Setup()
     printf("  muRatio        : %.16e\n", muRatio);
     printf("  expected dp    : %.16e  # 2/(We*R)\n", deltaP);
   }
+  if (platform->comm.mpiRank() == 0) {
+    std::ofstream("errors.dat", std::ios::trunc);
+  }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
@@ -86,10 +93,6 @@ void UDF_ExecuteStep(double time, int tstep)
 
     static bool fileCleared = false;
     if (platform->comm.mpiRank() == 0) {
-      if(!fileCleared) {
-        std::ofstream("errors.dat", std::ios::trunc);
-        fileCleared = true;
-      }
       std::ofstream fout("errors.dat", std::ios::app);
       fout << time << " " << tstep << " " << std::scientific << L2rms / sqrt(mesh->volume) << " " << L2div / sqrt(mesh->volume) << "\n";
       std::cout <<"time = " << time << " tstep = " << tstep <<
