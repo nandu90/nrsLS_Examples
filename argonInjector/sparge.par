@@ -1,0 +1,59 @@
+userSections = tlsr, clsr, lvlset
+
+[GENERAL]
+polynomialOrder = 5
+startfrom = sparge.fld
+stopAt = endTime
+endTime = 10.0
+#stopAt = numSteps
+#numSteps = 1
+dt = initial=1.0e-6+targetCFL=0.4+max=1.0e-4
+timeStepper = tombo2
+checkpointControl = simulationTime
+checkPointInterval = 0.1
+scalars = tls, cls
+
+[PROBLEMTYPE]
+equation = navierStokes+variableViscosity
+
+[FLUID VELOCITY]
+boundaryTypeMap = zeroDirichlet, zeroDirichlet, zeroDirichlet, zeroDirichlet, zeroDirichlet, zeroNeumann, udfDirichlet, zeroDirichlet
+residualTol = 1e-8
+regularization = svv+scalingCoeff=1.0+filterPower=4.0
+#regularization = hpfrt+scalingCoeff=10+nModes=2
+
+[FLUID PRESSURE]
+residualTol = 1e-8
+
+[SCALAR TLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
+residualTol = 1e-6
+transportCoeff = 1.0
+diffusionCoeff = 1e-10
+regularization = svv+scalingCoeff=1.0+filterPower=2.0
+
+[SCALAR CLS]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, udfDirichlet, udfDirichlet, zeroNeumann
+residualTol = 1e-6
+transportCoeff = 1.0
+diffusionCoeff = 1e-10
+regularization = svv+scalingCoeff=1.0+filterPower=2.0
+
+[TLSR]
+residualTol = 1e-6
+solveFrequency = 0.01
+regularization = svv+scalingCoeff=2.0+filterPower=7.0+minPower=6.0
+targetCFL = 0.5
+
+[CLSR]
+residualTol = 1e-6
+solveFrequency = 0.001
+regularization = svv+scalingCoeff=1.0+filterPower=4.0
+targetCFL = 0.5
+maximumSteps = 50
+
+[LVLSET]
+interfaceWidthFactor = 1.6
+interfaceWidthMesh = max
+#farfield = 1.0
+#farfieldDeltaTol = 1.0e-03

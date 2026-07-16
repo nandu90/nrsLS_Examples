@@ -1,3 +1,14 @@
 *0.f*
 *log*
 *.cache*
+*png*
+*mp4*
+*pdf*
+*.tar.gz*
+*.batch*
+*.nek5000*
+*.avi*
+*obj*
+*.state*
+*.dat*
+*SESSION.NAME*

@@ -4,6 +4,7 @@ static int ciMode = 0;
 
 #define EPS_SVV 4.85e-3
 #define EPS_AVM 8.54e-3
+#define EPS_SVVAVM 6.08e-3
 
 dfloat exactSolution(dfloat x);
 
@@ -37,6 +38,7 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
   auto o_exact = platform->device.malloc<dfloat>(sexact.size(), sexact.data());
   auto o_svv = scalar->o_solution("s00");
   auto o_avm = scalar->o_solution("s01");
+  auto o_svvavm = scalar->o_solution("s02");
 
   auto o_err = platform->device.malloc<dfloat>(mesh->Nlocal);
 
@@ -46,7 +48,10 @@ void ciTestErrors(nrs_t *nrs, double time, int tstep)
   platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_avm, -1.0, o_exact, o_err);
   const auto avmnorm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
 
+  platform->linAlg->axpbyz(mesh->Nlocal, 1.0, o_svvavm, -1.0, o_exact, o_err);
+  const auto combinedNorm = platform->linAlg->weightedNorm1(mesh->Nlocal, mesh->o_LMM, o_err, platform->comm.mpiComm());
+
   if (platform->comm.mpiRank() == 0) {
-    CiEvalTest("L1-Err norm SVV: " + to_string_f(svvnorm) + " L1-Err norm AVM: " + to_string_f(avmnorm), svvnorm < EPS_SVV && avmnorm < EPS_AVM);
+    CiEvalTest("L1-Err norm SVV: " + to_string_f(svvnorm) + " L1-Err norm AVM: " + to_string_f(avmnorm) + " L1-Err norm SVV+AVM: " + to_string_f(combinedNorm), svvnorm < EPS_SVV && avmnorm < EPS_AVM && combinedNorm < EPS_SVVAVM);
   }
 }

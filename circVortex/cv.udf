@@ -6,6 +6,16 @@
 
 #endif
 
+#include "ci.inc"
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
+}
+
 void UDF_Setup()
 {
   auto mesh = nrs->meshV;
@@ -40,4 +50,10 @@ void UDF_ExecuteStep(double time, int tstep)
             nrs->scalar->o_U);
 
   lvlSet::solve(time);
+
+  if(ciMode) {
+    auto o_cls = nrs->scalar->o_solution("cls");
+    auto o_tls = nrs->scalar->o_solution("tls");
+    ciTestErrors(time, tstep, o_cls, o_tls);
+  }
 }
