@@ -29,26 +29,25 @@ void userf(double time)
 void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
-  auto fluid = nrs->fluid;
 
   auto o_surfaceAcc =
-      platform->deviceMemoryPool.reserve<dfloat>(fluid->fieldOffsetSum);
-  platform->linAlg->fill(fluid->fieldOffsetSum, 0.0, o_surfaceAcc);
+      platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_surfaceAcc);
   lvlSet::applySurfaceTensionAcc(We, o_surfaceAcc);
 
   platform->linAlg->axmyVector(mesh->Nlocal,
-                               fluid->fieldOffset,
+                               nrs->fluid->fieldOffset,
                                0,
                                1.0,
                                mesh->o_Jw,
                                o_surfaceAcc);
   platform->linAlg->axpbyMany(mesh->Nlocal,
                               mesh->dim,
-                              fluid->fieldOffset,
+                              nrs->fluid->fieldOffset,
                               1.0,
                               o_surfaceAcc,
                               1.0,
-                              fluid->o_JwF);
+                              nrs->fluid->o_JwF);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)

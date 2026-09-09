@@ -36,20 +36,19 @@ void userf(double time)
 void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
-  auto fluid = nrs->fluid;
 
   auto o_forceAcc =
-      platform->deviceMemoryPool.reserve<dfloat>(fluid->fieldOffsetSum);
-  platform->linAlg->fill(fluid->fieldOffsetSum, 0.0, o_forceAcc);
+      platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_forceAcc);
   lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
 
-  auto o_fx = o_forceAcc.slice(0 * fluid->fieldOffset, mesh->Nlocal);
+  auto o_fx = o_forceAcc.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
   auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
 
   dpdx += 1.0 / Fr * rhol; //to maintain Re_tau
 
   auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
-  auto o_rho = fluid->o_prop.slice(1 * fluid->fieldOffset, mesh->Nlocal);
+  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
   platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
 
   platform->linAlg->axpby(mesh->Nlocal, 
@@ -59,18 +58,18 @@ void preFluid(double time, int tstep)
                           o_fx);
 
   platform->linAlg->axmyVector(mesh->Nlocal,
-                               fluid->fieldOffset,
+                               nrs->fluid->fieldOffset,
                                0,
                                1.0,
                                mesh->o_Jw,
                                o_forceAcc);
   platform->linAlg->axpbyMany(mesh->Nlocal,
                               mesh->dim,
-                              fluid->fieldOffset,
+                              nrs->fluid->fieldOffset,
                               1.0,
                               o_forceAcc,
                               1.0,
-                              fluid->o_JwF);
+                              nrs->fluid->o_JwF);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
