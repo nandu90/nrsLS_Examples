@@ -5,7 +5,7 @@ polynomialOrder = 7
 #stopAt = endTime
 #endTime = 1.0
 stopAt = numSteps
-numSteps = 20
+numSteps = 200
 dt = initial=1.0e-5+targetCFL=0.1+max=1.0e-5
 timeStepper = tombo2
 checkpointControl = simulationTime
@@ -16,7 +16,7 @@ scalars = tls, cls, rms, divu
 equation = navierStokes+variableViscosity
 
 [FLUID VELOCITY]
-boundaryTypeMap = zeroDirichlet
+#boundaryTypeMap = zeroDirichlet
 #regularization = svv+scalingCoeff=1.0+filterPower=4.0
 residualTol = 1e-8
 
@@ -25,7 +25,7 @@ residualTol = 1e-8
 
 [SCALAR TLS]
 #solver = none
-boundaryTypeMap = zeroNeumann
+#boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-14
 residualTol = 1e-8
@@ -33,11 +33,12 @@ regularization = svv+scalingCoeff=0.1+filterPower=2.0
 
 [SCALAR CLS]
 #solver = none
-boundaryTypeMap = udfDirichlet
+#boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-14
 residualTol = 1e-8
-regularization = svv+scalingCoeff=0.1+filterPower=2.0
+#regularization = svv+scalingCoeff=0.1+filterPower=2.0
+regularization = avm+c0+scalingCoeff=1.0+noiseThreshold=1e-3
 
 [SCALAR RMS]
 solver = none
@@ -55,7 +56,11 @@ residualTol = 1e-8
 #solver = none
 solveFrequency = 0.001
 regularization = svv+scalingCoeff=1.0+filterPower=4.0
+#regularization = avm+c0+scalingCoeff=1.0+noiseThreshold=1e-3
 residualTol = 1e-8
 
 [LVLSET]
 interfaceWidthFactor = 1.5
+farFieldFix = false
+farfieldFixTol = 0.025
+enclosedfieldFixTol = 0.025

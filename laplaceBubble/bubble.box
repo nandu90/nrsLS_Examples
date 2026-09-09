@@ -8,4 +8,4 @@ Box
 -2.0 2.0 1.                              x0,x1,ratio
 -2.0 2.0 1.                              y0,y1,ratio
 0 0.2 1.                              z0,z1,ratio
-O  ,O  ,O  ,O  ,P  ,P                   BC's, 3 chars each
+P  ,P  ,P  ,P  ,P  ,P                   BC's, 3 chars each
