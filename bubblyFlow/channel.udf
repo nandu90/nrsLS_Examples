@@ -27,20 +27,29 @@ void userf(double time)
 {
   auto mesh = nrs->meshV;
 
-  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
-
   platform->linAlg->add(mesh->Nlocal, 
                         -1.0 / Fr,
                         nrs->fluid->o_EXT,
                         0 * nrs->fluid->fieldOffset);
+}
 
-  auto o_fx = nrs->fluid->o_EXT.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+  auto fluid = nrs->fluid;
+
+  auto o_forceAcc =
+      platform->deviceMemoryPool.reserve<dfloat>(fluid->fieldOffsetSum);
+  platform->linAlg->fill(fluid->fieldOffsetSum, 0.0, o_forceAcc);
+  lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+
+  auto o_fx = o_forceAcc.slice(0 * fluid->fieldOffset, mesh->Nlocal);
   auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
 
   dpdx += 1.0 / Fr * rhol; //to maintain Re_tau
 
   auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
-  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+  auto o_rho = fluid->o_prop.slice(1 * fluid->fieldOffset, mesh->Nlocal);
   platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
 
   platform->linAlg->axpby(mesh->Nlocal, 
@@ -49,6 +58,19 @@ void userf(double time)
                           1.0,
                           o_fx);
 
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_forceAcc);
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              fluid->fieldOffset,
+                              1.0,
+                              o_forceAcc,
+                              1.0,
+                              fluid->o_JwF);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -62,6 +84,7 @@ void UDF_Setup()
 {
   nrs->userProperties = &uservp;
   nrs->userSource = &userf;
+  nrs->preFluid = &preFluid;
 
   auto mesh = nrs->meshV;
 
