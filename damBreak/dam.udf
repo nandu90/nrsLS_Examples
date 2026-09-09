@@ -29,9 +29,9 @@ void preFluid(double time, int tstep)
   auto mesh = nrs->meshV;
 
   auto o_stAcc = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
-  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_surfaceAcc);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_stAcc);
 
-  lvlSet::applySurfaceTensionAcc(We, o_surfaceAcc);
+  lvlSet::applySurfaceTensionAcc(We, o_stAcc);
 
   platform->linAlg->axmyVector(mesh->Nlocal,
                                nrs->fluid->fieldOffset,
