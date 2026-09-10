@@ -10,7 +10,7 @@ static const bool singlePhase = true;
 // Paper case D2: rho_inside/rho_carrier=0.1, equal dynamic viscosities.
 static const dfloat rhoRatio = 10.0; // rho_carrier/rho_inside
 static const dfloat muRatio = 1.0;   // mu_carrier/mu_inside
-static const dfloat Re = 927.0;      // estimate corresponding to Re_lambda ~= 87
+static const dfloat Re = 423.0;      // estimate corresponding to Re_lambda ~= 87
 static const dfloat We = 29.25;      // conventional We = 3/2 We_L; We_L=19.5
 static const dfloat carrierDensity = 1.0;
 static const dfloat carrierViscosity = 1.0/Re;
@@ -149,9 +149,11 @@ void preFluid(double time, int tstep)
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
-  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
-  options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
-  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  if(!singlePhase) {
+    options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+    options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+    options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  }
 }
 
 void UDF_Setup()
