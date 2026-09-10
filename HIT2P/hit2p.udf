@@ -1,0 +1,215 @@
+#include "lvlSet.hpp"
+
+#ifdef __okl__
+#include "hit2p.oudf"
+#endif
+
+static const dfloat bubbleRadius = 0.5*M_PI;
+static const bool singlePhase = true;
+
+// Paper case D2: rho_inside/rho_carrier=0.1, equal dynamic viscosities.
+static const dfloat rhoRatio = 10.0; // rho_carrier/rho_inside
+static const dfloat muRatio = 1.0;   // mu_carrier/mu_inside
+static const dfloat Re = 927.0;      // estimate corresponding to Re_lambda ~= 87
+static const dfloat We = 29.25;      // conventional We = 3/2 We_L; We_L=19.5
+static const dfloat carrierDensity = 1.0;
+static const dfloat carrierViscosity = 1.0/Re;
+
+static const dfloat uPrimeTarget = 1.0;
+static const dfloat integralLength = 0.19*(2.0*M_PI);
+static const dfloat controllerGain = 10.0;
+static const dfloat relaxationTime = integralLength/uPrimeTarget;
+
+static dfloat forcingA = 0.0;
+static dfloat carrierTke = 0.0;
+static dfloat carrierDissipation = 0.0;
+static dfloat forcingPower = 0.0;
+static dfloat taylorReynolds = 0.0;
+
+void updateForcingCoefficient()
+{
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+  auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
+
+  poolDeviceMemory<dfloat> o_energy(offset);
+  platform->linAlg->magSqrVector(mesh->Nlocal,
+                                 offset,
+                                 nrs->fluid->o_U,
+                                 o_energy);
+  platform->linAlg->scale(mesh->Nlocal, 0.5*carrierDensity, o_energy);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_energy);
+
+  auto integral = [&](const occa::memory &o_field)
+  {
+    return platform->linAlg->innerProd(mesh->Nlocal,
+                                       mesh->o_Jw,
+                                       o_field,
+                                       platform->comm.mpiComm());
+  };
+
+  const dfloat carrierVolume = fmax(integral(o_cls), 1.0e-14);
+  carrierTke = fmax(integral(o_energy)/carrierVolume, 1.0e-14);
+
+  auto o_Sij = nrs->strainRate();
+  poolDeviceMemory<dfloat> o_dissipation(offset);
+  poolDeviceMemory<dfloat> o_viscousFlux(3*offset);
+  poolDeviceMemory<dfloat> o_pressureFlux(3*offset);
+
+  assembleCarrierBudget(mesh->Nlocal,
+                        offset,
+                        nrs->fluid->o_U,
+                        nrs->fluid->o_P,
+                        o_mue,
+                        o_Sij,
+                        o_dissipation,
+                        o_viscousFlux,
+                        o_pressureFlux);
+
+  auto o_viscousTransport = opSEM::strongDivergence(mesh, offset, o_viscousFlux);
+  auto o_pressureTransport = opSEM::strongDivergence(mesh, offset, o_pressureFlux);
+
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_dissipation);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_viscousTransport);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_pressureTransport);
+
+  carrierDissipation = integral(o_dissipation)/carrierVolume;
+  const dfloat carrierViscousTransport = integral(o_viscousTransport)/carrierVolume;
+  const dfloat carrierPressureTransport = integral(o_pressureTransport)/carrierVolume;
+
+  const dfloat targetTke = 1.5 * uPrimeTarget * uPrimeTarget;
+  forcingA = (carrierDissipation
+              + carrierPressureTransport
+              - carrierViscousTransport
+              - controllerGain*(carrierTke - targetTke)/relaxationTime)
+             /(2.0*carrierTke);
+
+  forcingPower = 2.0*forcingA*carrierTke;
+  taylorReynolds = carrierTke
+                 * sqrt(20.0
+                        /(3.0*carrierViscosity
+                          * fmax(carrierDissipation, 1.0e-14)));
+}
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+}
+
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+  auto o_forceAcc =
+      platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_forceAcc);
+
+  if (!singlePhase) {
+    lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+  }
+
+  updateForcingCoefficient();
+
+  static int lastPrintedStep = -1;
+  if ((tstep == 1 || tstep % 100 == 0)
+      && tstep != lastPrintedStep
+      && platform->comm.mpiRank() == 0) {
+    printf("HIT t=% .6e  k=% .6e  eps=% .6e  2Ak=% .6e  Re_lambda=% .6e\n",
+           time,
+           carrierTke,
+           carrierDissipation,
+           forcingPower,
+           taylorReynolds);
+    lastPrintedStep = tstep;
+  }
+
+  addCarrierForcing(mesh->Nlocal,
+                    nrs->fluid->fieldOffset,
+                    forcingA,
+                    carrierDensity,
+                    nrs->scalar->o_solution("cls"),
+                    nrs->fluid->o_prop.slice(1*nrs->fluid->fieldOffset,
+                                             mesh->Nlocal),
+                    nrs->fluid->o_U,
+                    o_forceAcc);
+
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               nrs->fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_forceAcc);
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              nrs->fluid->fieldOffset,
+                              1.0,
+                              o_forceAcc,
+                              1.0,
+                              nrs->fluid->o_JwF);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->preFluid = &preFluid;
+
+  auto mesh = nrs->meshV;
+
+  // genbox creates a canonical [-1,1]^3 mesh. Work in the paper's
+  // physical [-pi,pi]^3 domain throughout the solver and level-set setup.
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_x, platform->comm.mpiComm());
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_y, platform->comm.mpiComm());
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_z, platform->comm.mpiComm());
+
+  lvlSet::setup();
+
+  auto o_tls = nrs->scalar->o_solution("tls");
+  auto o_cls = nrs->scalar->o_solution("cls");
+  const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
+
+  if (!restarting) {
+    initializeHitSeed(mesh->Nlocal,
+                      nrs->fluid->fieldOffset,
+                      0.10,
+                      mesh->o_x,
+                      mesh->o_z,
+                      nrs->fluid->o_U);
+  }
+
+  if (singlePhase) {
+    if (!restarting) {
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_tls);
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_cls);
+    }
+  } else {
+    const dfloat clsMinimum =
+        platform->linAlg->min(mesh->Nlocal,
+                              o_cls,
+                              platform->comm.mpiComm());
+
+    // Initialize the bubble for a fresh run or a uniform single-phase
+    // precursor restart. Preserve CLS/TLS on a two-phase restart.
+    if (!restarting || clsMinimum > 1.0 - 1.0e-8) {
+      initializeBubble(mesh->Nlocal,
+                       bubbleRadius,
+                       mesh->o_x,
+                       mesh->o_y,
+                       mesh->o_z,
+                       o_tls);
+      lvlSet::initHeaviside(o_tls, o_cls);
+    }
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  if (!singlePhase) {
+    lvlSet::solve(time);
+  }
+}

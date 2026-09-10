@@ -1,0 +1,92 @@
+@kernel void initializeBubble(const dlong N,
+                              const dfloat radius,
+                              @ restrict const dfloat *X,
+                              @ restrict const dfloat *Y,
+                              @ restrict const dfloat *Z,
+                              @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat r = sqrt(X[n]*X[n] + Y[n]*Y[n] + Z[n]*Z[n]);
+    // Negative inside: CLS=0 is the light phase; CLS=1 is the carrier.
+    S[n] = r - radius;
+  }
+}
+
+@kernel void initializeHitSeed(const dlong N,
+                               const dlong offset,
+                               const dfloat amplitude,
+                               @ restrict const dfloat *X,
+                               @ restrict const dfloat *Z,
+                               @ restrict dfloat *U)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat alpha = 4.0;
+    const dfloat beta = 3.0;
+    const dfloat x = X[n];
+    const dfloat z = Z[n];
+
+    // Solenoidal seed used only to start the forced HIT transient.
+    U[n + 0*offset] =  amplitude*beta*sin(alpha*x)*cos(beta*z);
+    U[n + 1*offset] =  amplitude*sin(alpha*x)*sin(beta*z);
+    U[n + 2*offset] = -amplitude*alpha*cos(alpha*x)*sin(beta*z);
+  }
+}
+
+@kernel void assembleCarrierBudget(const dlong N,
+                                   const dlong offset,
+                                   @ restrict const dfloat *U,
+                                   @ restrict const dfloat *P,
+                                   @ restrict const dfloat *MUE,
+                                   @ restrict const dfloat *SIJ,
+                                   @ restrict dfloat *DISSIPATION,
+                                   @ restrict dfloat *VISCOUSFLUX,
+                                   @ restrict dfloat *PRESSUREFLUX)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat u = U[n + 0*offset];
+    const dfloat v = U[n + 1*offset];
+    const dfloat w = U[n + 2*offset];
+    const dfloat twoMu = 2.0*MUE[n];
+
+    // nrs->strainRate(): Sxx, Sxy, Sxz, Syy, Syz, Szz.
+    const dfloat txx = twoMu*SIJ[n + 0*offset];
+    const dfloat txy = twoMu*SIJ[n + 1*offset];
+    const dfloat txz = twoMu*SIJ[n + 2*offset];
+    const dfloat tyy = twoMu*SIJ[n + 3*offset];
+    const dfloat tyz = twoMu*SIJ[n + 4*offset];
+    const dfloat tzz = twoMu*SIJ[n + 5*offset];
+
+    DISSIPATION[n] = twoMu*(SIJ[n + 0*offset]*SIJ[n + 0*offset]
+                                 + SIJ[n + 3*offset]*SIJ[n + 3*offset]
+                                 + SIJ[n + 5*offset]*SIJ[n + 5*offset]
+                           + 2.0*(SIJ[n + 1*offset]*SIJ[n + 1*offset]
+                                 + SIJ[n + 2*offset]*SIJ[n + 2*offset]
+                                 + SIJ[n + 4*offset]*SIJ[n + 4*offset]));
+
+    VISCOUSFLUX[n + 0*offset] = u*txx + v*txy + w*txz;
+    VISCOUSFLUX[n + 1*offset] = u*txy + v*tyy + w*tyz;
+    VISCOUSFLUX[n + 2*offset] = u*txz + v*tyz + w*tzz;
+
+    PRESSUREFLUX[n + 0*offset] = P[n]*u;
+    PRESSUREFLUX[n + 1*offset] = P[n]*v;
+    PRESSUREFLUX[n + 2*offset] = P[n]*w;
+  }
+}
+
+@kernel void addCarrierForcing(const dlong N,
+                               const dlong offset,
+                               const dfloat forcingA,
+                               const dfloat carrierDensity,
+                               @ restrict const dfloat *CLS,
+                               @ restrict const dfloat *RHO,
+                               @ restrict const dfloat *U,
+                               @ restrict dfloat *ACC)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat c = fmax(0.0, fmin(1.0, CLS[n]));
+    const dfloat scale = forcingA*c*carrierDensity/RHO[n];
+    ACC[n + 0*offset] += scale*U[n + 0*offset];
+    ACC[n + 1*offset] += scale*U[n + 1*offset];
+    ACC[n + 2*offset] += scale*U[n + 2*offset];
+  }
+}
