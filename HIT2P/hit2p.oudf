@@ -14,21 +14,37 @@
 
 @kernel void initializeHitSeed(const dlong N,
                                const dlong offset,
-                               const dfloat amplitude,
+                               const int nModes,
                                @ restrict const dfloat *X,
+                               @ restrict const dfloat *Y,
                                @ restrict const dfloat *Z,
+                               @ restrict const dfloat *KX,
+                               @ restrict const dfloat *KY,
+                               @ restrict const dfloat *KZ,
+                               @ restrict const dfloat *AX,
+                               @ restrict const dfloat *AY,
+                               @ restrict const dfloat *AZ,
+                               @ restrict const dfloat *PHASE,
                                @ restrict dfloat *U)
 {
   for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
-    const dfloat alpha = 4.0;
-    const dfloat beta = 3.0;
     const dfloat x = X[n];
+    const dfloat y = Y[n];
     const dfloat z = Z[n];
+    dfloat u = 0.0;
+    dfloat v = 0.0;
+    dfloat w = 0.0;
 
-    // Solenoidal seed used only to start the forced HIT transient.
-    U[n + 0*offset] =  amplitude*beta*sin(alpha*x)*cos(beta*z);
-    U[n + 1*offset] =  amplitude*sin(alpha*x)*sin(beta*z);
-    U[n + 2*offset] = -amplitude*alpha*cos(alpha*x)*sin(beta*z);
+    for (int m = 0; m < nModes; ++m) {
+      const dfloat q = cos(KX[m]*x + KY[m]*y + KZ[m]*z + PHASE[m]);
+      u += AX[m]*q;
+      v += AY[m]*q;
+      w += AZ[m]*q;
+    }
+
+    U[n + 0*offset] = u;
+    U[n + 1*offset] = v;
+    U[n + 2*offset] = w;
   }
 }
 
