@@ -1,0 +1,27 @@
+@kernel void initializeDiagnosticCircle(const dlong N,
+                                        const dfloat xc,
+                                        const dfloat yc,
+                                        const dfloat r,
+                                        @ restrict const dfloat *X,
+                                        @ restrict const dfloat *Y,
+                                        @ restrict dfloat *TLS)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat dx = X[n] - xc;
+    const dfloat dy = Y[n] - yc;
+    TLS[n] = sqrt(dx * dx + dy * dy) - r;
+  }
+}
+
+@kernel void setDiagnosticVelocity(const dlong N,
+                                   const dlong offset,
+                                   const dfloat ux,
+                                   const dfloat uy,
+                                   @ restrict dfloat *U)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    U[n + 0 * offset] = ux;
+    U[n + 1 * offset] = uy;
+    U[n + 2 * offset] = 0.0;
+  }
+}
