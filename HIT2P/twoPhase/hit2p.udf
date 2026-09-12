@@ -37,6 +37,63 @@ static dfloat measuredIntegralLength = 0.0;
 static dfloat uAvg[3] = {0.0, 0.0, 0.0};
 static FILE *hit2pFile = nullptr;
 
+void openHit2pFile(const bool restarting)
+{
+  static const char *header =
+      "# t alphaD area se kMix epsMix kC kD epsC epsD "
+      "ReLambdaC ReLambdaD uAvgCx uAvgCy uAvgCz "
+      "uAvgDx uAvgDy uAvgDz\n";
+
+  if (platform->comm.mpiRank() != 0) {
+    return;
+  }
+
+  if (restarting) {
+    dfloat restartTime = 0.0;
+    platform->options.getArgs("START TIME", restartTime);
+
+    std::ifstream input("hit2p.dat");
+    std::ofstream output("hit2p.dat.tmp", std::ios::trunc);
+    if (!output) {
+      fprintf(stderr, "Unable to open hit2p.dat.tmp for writing\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+
+    output << header;
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      std::istringstream values(line);
+      dfloat fileTime = 0.0;
+      if (values >> fileTime && fileTime < restartTime - 1.0e-12) {
+        output << line << '\n';
+      }
+    }
+    input.close();
+    output.close();
+
+    if (rename("hit2p.dat.tmp", "hit2p.dat") != 0) {
+      fprintf(stderr, "Unable to replace hit2p.dat after trimming restart history\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+    hit2pFile = fopen("hit2p.dat", "a");
+  } else {
+    hit2pFile = fopen("hit2p.dat", "w");
+    if (hit2pFile) {
+      fprintf(hit2pFile, "%s", header);
+    }
+  }
+
+  if (!hit2pFile) {
+    fprintf(stderr, "Unable to open hit2p.dat for writing\n");
+    MPI_Abort(platform->comm.mpiComm(), 1);
+  }
+  fflush(hit2pFile);
+}
+
 void initializeHIT()
 {
   auto mesh = nrs->meshV;
@@ -356,18 +413,7 @@ void UDF_Setup()
       lvlSet::initHeaviside(o_tls, o_cls);
     }
 
-    if (platform->comm.mpiRank() == 0) {
-      hit2pFile = fopen("hit2p.dat", "w");
-      if (!hit2pFile) {
-        fprintf(stderr, "Unable to open hit2p.dat for writing\n");
-        MPI_Abort(platform->comm.mpiComm(), 1);
-      }
-      fprintf(hit2pFile,
-              "# t alphaD area se kMix epsMix kC kD epsC epsD "
-              "ReLambdaC ReLambdaD uAvgCx uAvgCy uAvgCz "
-              "uAvgDx uAvgDy uAvgDz\n");
-      fflush(hit2pFile);
-    }
+    openHit2pFile(restarting);
   }
 }
 

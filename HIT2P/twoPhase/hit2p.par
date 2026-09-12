@@ -4,7 +4,7 @@ userSections = tlsr, clsr, lvlset
 polynomialOrder = 7
 startFrom = "hit2p.fld"
 stopAt = endTime
-endTime = 10.0
+endTime = 15.0
 dt = 1e-4 #targetCFL=0.4+max=2.0e-3
 timeStepper = tombo2
 
