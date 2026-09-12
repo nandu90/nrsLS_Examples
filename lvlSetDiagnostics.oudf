@@ -1,0 +1,33 @@
+@kernel void lvlSetInterfaceIndicator(const dlong N,
+                                      const dfloat lowerBound,
+                                      const dfloat upperBound,
+                                      @ restrict const dfloat *CLS,
+                                      @ restrict dfloat *INDICATOR)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat cls = CLS[n];
+    INDICATOR[n] = cls >= lowerBound && cls <= upperBound ? 1.0 : 0.0;
+  }
+}
+
+@kernel void lvlSetPhaseWeightedField(const dlong N,
+                                      const int phase,
+                                      @ restrict const dfloat *CLS,
+                                      @ restrict const dfloat *FIELD,
+                                      @ restrict dfloat *WEIGHTEDFIELD)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat phaseFraction = phase == 1 ? CLS[n] : 1.0 - CLS[n];
+    WEIGHTEDFIELD[n] = phaseFraction * FIELD[n];
+  }
+}
+
+@kernel void lvlSetMultiplyFields(const dlong N,
+                                  @ restrict const dfloat *FIELD1,
+                                  @ restrict const dfloat *FIELD2,
+                                  @ restrict dfloat *PRODUCT)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    PRODUCT[n] = FIELD1[n] * FIELD2[n];
+  }
+}

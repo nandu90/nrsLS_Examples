@@ -1,0 +1,13 @@
+-3                     spatial dimension (create hit2p.re2)
+1                      number of fields
+#
+# Triply periodic 2*pi cube. 32 elements/direction with N=7 gives
+# approximately 224^3 independent SEM intervals, close to the paper's
+# 256^3 DNS. Increase to 36^3 for approximately 252^3 intervals.
+#
+Box
+-32 -32 -32            nelx,nely,nelz
+-1.0 1.0 1.0
+-1.0 1.0 1.0
+-1.0 1.0 1.0
+P  ,P  ,P  ,P  ,P  ,P  

@@ -19,14 +19,35 @@ void userf(double time)
 {
   auto mesh = nrs->meshV;
 
-  // Continuum-surface-force contribution.
-  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
-
   // Gravity is in the negative z direction.
   platform->linAlg->add(mesh->Nlocal, 
                         -1.0 / Fr,
                         nrs->fluid->o_EXT,
                         2 * nrs->fluid->fieldOffset);
+}
+
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  auto o_surfaceAcc =
+      platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_surfaceAcc);
+  lvlSet::applySurfaceTensionAcc(We, o_surfaceAcc);
+
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               nrs->fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_surfaceAcc);
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              nrs->fluid->fieldOffset,
+                              1.0,
+                              o_surfaceAcc,
+                              1.0,
+                              nrs->fluid->o_JwF);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -41,6 +62,7 @@ void UDF_Setup()
 {
   nrs->userProperties = &uservp;
   nrs->userSource = &userf;
+  nrs->preFluid = &preFluid;
 
   auto mesh = nrs->meshV;
 

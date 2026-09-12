@@ -1,0 +1,5 @@
+      subroutine usrdat3
+      include 'SIZE'
+      include 'TOTAL'
+      return
+      end

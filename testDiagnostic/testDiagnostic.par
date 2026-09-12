@@ -1,0 +1,33 @@
+userSections = tlsr, clsr
+
+[GENERAL]
+polynomialOrder = 5
+stopAt = numSteps
+numSteps = 100
+dt = 1.0e-3
+timeStepper = tombo2
+checkPointInterval = 0
+scalars = tls, cls
+
+[FLUID VELOCITY]
+solver = none
+
+[SCALAR TLS]
+boundaryTypeMap = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-08
+regularization = svv
+
+[SCALAR CLS]
+boundaryTypeMap = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-14
+residualTol = 1e-08
+regularization = svv
+
+[TLSR]
+solveFrequency = 0.05
+
+[CLSR]
+solveFrequency = 0.025

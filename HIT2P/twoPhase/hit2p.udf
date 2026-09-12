@@ -1,0 +1,553 @@
+#include "lvlSet.hpp"
+
+#ifdef __okl__
+#include "lvlSetDiagnostics.oudf"
+#include "hit2p.oudf"
+#endif
+
+#include "lvlSetDiagnostics.inc"
+
+static const dfloat bubbleRadius = 0.5*M_PI;
+static const bool singlePhase = false;
+
+// Paper case D2: rho_inside/rho_carrier=0.1, equal dynamic viscosities.
+static const dfloat rhoRatio = 10.0; // rho_carrier/rho_inside
+static const dfloat muRatio = 1.0;   // mu_carrier/mu_inside
+static const dfloat Re = 518.0;      // Bassenne scaling for Re_lambda ~= 87
+static const dfloat We = 29.25;      // conventional We = 3/2 We_L; We_L=19.5
+static const dfloat carrierDensity = 1.0;
+static const dfloat carrierViscosity = 1.0/Re;
+
+static const dfloat targetTke = 1.0;
+static const dfloat turnoverVelocity = sqrt(2.0*targetTke/3.0);
+static const dfloat integralLength = 0.19*(2.0*M_PI);
+static const dfloat controllerGain = 67.0;
+static const dfloat relaxationTime = integralLength/turnoverVelocity;
+static const dfloat initialSpectrumPeak = 12.5;
+static const int initialModesPerShell = 4;
+static const int initialMinimumShell = 1;
+static const int initialMaximumShell = 25;
+
+static dfloat forcingA = 0.0;
+static dfloat carrierTke = 0.0;
+static dfloat carrierDissipation = 0.0;
+static dfloat forcingPower = 0.0;
+static dfloat taylorReynolds = 0.0;
+static dfloat measuredIntegralLength = 0.0;
+static dfloat uAvg[3] = {0.0, 0.0, 0.0};
+static FILE *hit2pFile = nullptr;
+
+void openHit2pFile(const bool restarting)
+{
+  static const char *header =
+      "# t alphaD area se kMix epsMix kC kD epsC epsD "
+      "ReLambdaC ReLambdaD uAvgCx uAvgCy uAvgCz "
+      "uAvgDx uAvgDy uAvgDz\n";
+
+  if (platform->comm.mpiRank() != 0) {
+    return;
+  }
+
+  if (restarting) {
+    dfloat restartTime = 0.0;
+    platform->options.getArgs("START TIME", restartTime);
+
+    std::ifstream input("hit2p.dat");
+    std::ofstream output("hit2p.dat.tmp", std::ios::trunc);
+    if (!output) {
+      fprintf(stderr, "Unable to open hit2p.dat.tmp for writing\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+
+    output << header;
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      std::istringstream values(line);
+      dfloat fileTime = 0.0;
+      if (values >> fileTime && fileTime < restartTime - 1.0e-12) {
+        output << line << '\n';
+      }
+    }
+    input.close();
+    output.close();
+
+    if (rename("hit2p.dat.tmp", "hit2p.dat") != 0) {
+      fprintf(stderr, "Unable to replace hit2p.dat after trimming restart history\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+    hit2pFile = fopen("hit2p.dat", "a");
+  } else {
+    hit2pFile = fopen("hit2p.dat", "w");
+    if (hit2pFile) {
+      fprintf(hit2pFile, "%s", header);
+    }
+  }
+
+  if (!hit2pFile) {
+    fprintf(stderr, "Unable to open hit2p.dat for writing\n");
+    MPI_Abort(platform->comm.mpiComm(), 1);
+  }
+  fflush(hit2pFile);
+}
+
+void initializeHIT()
+{
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+  const int nShells = initialMaximumShell - initialMinimumShell + 1;
+  const int nModes = initialModesPerShell*nShells;
+
+  std::vector<dfloat> kx(nModes);
+  std::vector<dfloat> ky(nModes);
+  std::vector<dfloat> kz(nModes);
+  std::vector<dfloat> ax(nModes);
+  std::vector<dfloat> ay(nModes);
+  std::vector<dfloat> az(nModes);
+  std::vector<dfloat> phase(nModes);
+
+  std::mt19937 generator(1729);
+  std::uniform_real_distribution<dfloat> uniform(-1.0, 1.0);
+  std::uniform_real_distribution<dfloat> phaseDistribution(0.0, 2.0*M_PI);
+
+  int mode = 0;
+  for (int shell = initialMinimumShell; shell <= initialMaximumShell; ++shell) {
+    const dfloat kappa = shell;
+    const dfloat ratio = kappa/initialSpectrumPeak;
+    const dfloat spectrum =
+        (32.0*targetTke/(3.0*initialSpectrumPeak))*sqrt(2.0/M_PI)
+        *pow(ratio, 4.0)*exp(-2.0*ratio*ratio);
+    const dfloat modeAmplitude = 2.0*sqrt(spectrum/initialModesPerShell);
+
+    for (int sample = 0; sample < initialModesPerShell; ++sample) {
+      int ikx = 0;
+      int iky = 0;
+      int ikz = 0;
+      dfloat kmag = 0.0;
+      do {
+        ikx = static_cast<int>(floor((2*shell + 1)*0.5*(uniform(generator) + 1.0))) - shell;
+        iky = static_cast<int>(floor((2*shell + 1)*0.5*(uniform(generator) + 1.0))) - shell;
+        ikz = static_cast<int>(floor((2*shell + 1)*0.5*(uniform(generator) + 1.0))) - shell;
+        kmag = sqrt(static_cast<dfloat>(ikx*ikx + iky*iky + ikz*ikz));
+      } while (kmag < shell - 0.5 || kmag >= shell + 0.5);
+
+      const dfloat inverseK2 = 1.0/(kmag*kmag);
+      dfloat rx;
+      dfloat ry;
+      dfloat rz;
+      dfloat polarizationMagnitude;
+      do {
+        rx = uniform(generator);
+        ry = uniform(generator);
+        rz = uniform(generator);
+        const dfloat projection =
+            (rx*ikx + ry*iky + rz*ikz)*inverseK2;
+        rx -= projection*ikx;
+        ry -= projection*iky;
+        rz -= projection*ikz;
+        polarizationMagnitude = sqrt(rx*rx + ry*ry + rz*rz);
+      } while (polarizationMagnitude < 1.0e-8);
+      const dfloat inversePolarization =
+          1.0/polarizationMagnitude;
+
+      kx[mode] = ikx;
+      ky[mode] = iky;
+      kz[mode] = ikz;
+      ax[mode] = modeAmplitude*rx*inversePolarization;
+      ay[mode] = modeAmplitude*ry*inversePolarization;
+      az[mode] = modeAmplitude*rz*inversePolarization;
+      phase[mode] = phaseDistribution(generator);
+      ++mode;
+    }
+  }
+
+  auto o_kx = platform->device.malloc<dfloat>(kx.size(), kx.data());
+  auto o_ky = platform->device.malloc<dfloat>(ky.size(), ky.data());
+  auto o_kz = platform->device.malloc<dfloat>(kz.size(), kz.data());
+  auto o_ax = platform->device.malloc<dfloat>(ax.size(), ax.data());
+  auto o_ay = platform->device.malloc<dfloat>(ay.size(), ay.data());
+  auto o_az = platform->device.malloc<dfloat>(az.size(), az.data());
+  auto o_phase = platform->device.malloc<dfloat>(phase.size(), phase.data());
+
+  initializeHitSeed(mesh->Nlocal,
+                    offset,
+                    nModes,
+                    mesh->o_x,
+                    mesh->o_y,
+                    mesh->o_z,
+                    o_kx,
+                    o_ky,
+                    o_kz,
+                    o_ax,
+                    o_ay,
+                    o_az,
+                    o_phase,
+                    nrs->fluid->o_U);
+
+  auto average = [&](const occa::memory &o_field)
+  {
+    return platform->linAlg->innerProd(mesh->Nlocal,
+                                       mesh->o_Jw,
+                                       o_field,
+                                       platform->comm.mpiComm())/mesh->volume;
+  };
+
+  for (int component = 0; component < mesh->dim; ++component) {
+    auto o_U = nrs->fluid->o_U.slice(component*offset, mesh->Nlocal);
+    platform->linAlg->add(mesh->Nlocal, -average(o_U), o_U);
+  }
+
+  poolDeviceMemory<dfloat> o_energy(offset);
+  platform->linAlg->magSqrVector(mesh->Nlocal,
+                                 offset,
+                                 nrs->fluid->o_U,
+                                 o_energy);
+  const dfloat initialTke = 0.5*average(o_energy);
+  platform->linAlg->scale(nrs->fluid->fieldOffsetSum,
+                          sqrt(targetTke/initialTke),
+                          nrs->fluid->o_U);
+}
+
+void updateForcingCoefficient(occa::memory o_forceAcc)
+{
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+  auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
+
+  auto integral = [&](const occa::memory &o_field)
+  {
+    return platform->linAlg->innerProd(mesh->Nlocal,
+                                       mesh->o_Jw,
+                                       o_field,
+                                       platform->comm.mpiComm());
+  };
+
+  const dfloat carrierVolume = fmax(integral(o_cls), 1.0e-14);
+
+  poolDeviceMemory<dfloat> o_uPrime(nrs->fluid->fieldOffsetSum);
+  o_uPrime.copyFrom(nrs->fluid->o_U,
+                    nrs->fluid->fieldOffsetSum);
+  poolDeviceMemory<dfloat> o_uAvg(offset);
+  for (int component = 0; component < mesh->dim; ++component) {
+    auto o_U =
+        nrs->fluid->o_U.slice(component*offset, mesh->Nlocal);
+    o_uAvg.copyFrom(o_U, mesh->Nlocal);
+    platform->linAlg->axmy(mesh->Nlocal,
+                           1.0,
+                           o_cls,
+                           o_uAvg);
+    uAvg[component] = integral(o_uAvg)/carrierVolume;
+    platform->linAlg->add(mesh->Nlocal,
+                          -uAvg[component],
+                          o_uPrime.slice(component*offset,
+                                         mesh->Nlocal));
+  }
+
+  poolDeviceMemory<dfloat> o_energy(offset);
+  platform->linAlg->magSqrVector(mesh->Nlocal,
+                                 offset,
+                                 o_uPrime,
+                                 o_energy);
+  platform->linAlg->scale(mesh->Nlocal, 0.5*carrierDensity, o_energy);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_energy);
+
+  carrierTke = fmax(integral(o_energy)/carrierVolume, 1.0e-14);
+
+  auto o_Sij = nrs->strainRate();
+  poolDeviceMemory<dfloat> o_dissipation(offset);
+  poolDeviceMemory<dfloat> o_viscousFlux(3*offset);
+  poolDeviceMemory<dfloat> o_pressureFlux(3*offset);
+
+  assembleCarrierBudget(mesh->Nlocal,
+                        offset,
+                        o_uPrime,
+                        nrs->fluid->o_P,
+                        o_mue,
+                        o_Sij,
+                        o_dissipation,
+                        o_viscousFlux,
+                        o_pressureFlux);
+
+  auto o_viscousTransport = opSEM::strongDivergence(mesh, offset, o_viscousFlux);
+  auto o_pressureTransport = opSEM::strongDivergence(mesh, offset, o_pressureFlux);
+
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_dissipation);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_viscousTransport);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_cls, o_pressureTransport);
+
+  carrierDissipation = integral(o_dissipation)/carrierVolume;
+  const dfloat carrierViscousTransport = integral(o_viscousTransport)/carrierVolume;
+  const dfloat carrierPressureTransport = integral(o_pressureTransport)/carrierVolume;
+
+  forcingA = (carrierDissipation
+              + carrierPressureTransport
+              - carrierViscousTransport
+              - controllerGain*(carrierTke - targetTke)/relaxationTime)
+             /(2.0*carrierTke);
+
+  forcingPower = 2.0*forcingA*carrierTke;
+  taylorReynolds = carrierTke
+                 * sqrt(20.0
+                        /(3.0*carrierViscosity
+                          * fmax(carrierDissipation, 1.0e-14)));
+  const dfloat measuredTurnoverVelocity = sqrt(2.0*carrierTke/3.0);
+  measuredIntegralLength = measuredTurnoverVelocity
+                           * measuredTurnoverVelocity
+                           * measuredTurnoverVelocity
+                           / fmax(carrierDissipation, 1.0e-14);
+
+  addCarrierForcing(mesh->Nlocal,
+                    offset,
+                    forcingA,
+                    carrierDensity,
+                    o_cls,
+                    nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal),
+                    o_uPrime,
+                    o_forceAcc);
+}
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re);
+}
+
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+  auto o_forceAcc = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_forceAcc);
+
+  if (!singlePhase) {
+    lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+  }
+
+  updateForcingCoefficient(o_forceAcc);
+
+  static int lastPrintedStep = -1;
+  if ((tstep == 1 || tstep % 100 == 0)
+      && tstep != lastPrintedStep
+      && platform->comm.mpiRank() == 0) {
+    printf("HIT t=% .6e  k=% .6e  eps=% .6e  2Ak=% .6e  Re_lambda=% .6e  l=% .6e  uAvg=(% .6e,% .6e,% .6e)\n",
+           time,
+           carrierTke,
+           carrierDissipation,
+           forcingPower,
+           taylorReynolds,
+           measuredIntegralLength,
+           uAvg[0],
+           uAvg[1],
+           uAvg[2]);
+    lastPrintedStep = tstep;
+  }
+
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               nrs->fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_forceAcc);
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              nrs->fluid->fieldOffset,
+                              1.0,
+                              o_forceAcc,
+                              1.0,
+                              nrs->fluid->o_JwF);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  if(!singlePhase) {
+    options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+    // options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+    options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  }
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->preFluid = &preFluid;
+
+  auto mesh = nrs->meshV;
+
+  // genbox creates a canonical [-1,1]^3 mesh. Work in the paper's
+  // physical [-pi,pi]^3 domain throughout the solver and level-set setup.
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_x, platform->comm.mpiComm());
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_y, platform->comm.mpiComm());
+  platform->linAlg->rescale(-M_PI, M_PI, mesh->o_z, platform->comm.mpiComm());
+
+  lvlSet::setup();
+
+  auto o_tls = nrs->scalar->o_solution("tls");
+  auto o_cls = nrs->scalar->o_solution("cls");
+  const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
+
+  if (!restarting) {
+    initializeHIT();
+  }
+
+  if (singlePhase) {
+    if (!restarting) {
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_tls);
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_cls);
+    }
+  } else {
+    const dfloat clsMinimum =
+        platform->linAlg->min(mesh->Nlocal,
+                              o_cls,
+                              platform->comm.mpiComm());
+
+    // Initialize the bubble for a fresh run or a uniform single-phase
+    // precursor restart. Preserve CLS/TLS on a two-phase restart.
+    if (!restarting || clsMinimum > 1.0 - 1.0e-8) {
+      initializeBubble(mesh->Nlocal,
+                       bubbleRadius,
+                       mesh->o_x,
+                       mesh->o_y,
+                       mesh->o_z,
+                       o_tls);
+      lvlSet::initHeaviside(o_tls, o_cls);
+    }
+
+    openHit2pFile(restarting);
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  if (!singlePhase) {
+    lvlSet::solve(time);
+
+    static bool firstDiagnostic = true;
+    if (firstDiagnostic || tstep % 100 == 0) {
+      auto mesh = nrs->meshV;
+      const auto offset = nrs->fluid->fieldOffset;
+      auto o_U = nrs->fluid->o_U;
+      auto o_rho = nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal);
+      auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
+
+      poolDeviceMemory<dfloat> o_specificEnergy(offset);
+      platform->linAlg->magSqrVector(mesh->Nlocal,
+                                     offset,
+                                     o_U,
+                                     o_specificEnergy);
+      platform->linAlg->scale(mesh->Nlocal, 0.5, o_specificEnergy);
+
+      const dfloat kCarrier =
+          lsDiagnostic::bulkPhaseAverage(o_specificEnergy);
+      const dfloat kDispersed =
+          lsDiagnostic::dispersedPhaseAverage(o_specificEnergy);
+
+      poolDeviceMemory<dfloat> o_mixtureEnergy(offset);
+      o_mixtureEnergy.copyFrom(o_specificEnergy, mesh->Nlocal);
+      platform->linAlg->axmy(mesh->Nlocal,
+                             1.0,
+                             o_rho,
+                             o_mixtureEnergy);
+      const dfloat mixtureTke =
+          platform->linAlg->innerProd(mesh->Nlocal,
+                                      mesh->o_LMM,
+                                      o_mixtureEnergy,
+                                      platform->comm.mpiComm())/mesh->volume;
+
+      auto o_Sij = nrs->strainRate();
+      poolDeviceMemory<dfloat> o_dissipation(offset);
+      poolDeviceMemory<dfloat> o_viscousFlux(3*offset);
+      poolDeviceMemory<dfloat> o_pressureFlux(3*offset);
+      assembleCarrierBudget(mesh->Nlocal,
+                            offset,
+                            o_U,
+                            nrs->fluid->o_P,
+                            o_mue,
+                            o_Sij,
+                            o_dissipation,
+                            o_viscousFlux,
+                            o_pressureFlux);
+
+      const dfloat epsCarrier =
+          lsDiagnostic::bulkPhaseAverage(o_dissipation);
+      const dfloat epsDispersed =
+          lsDiagnostic::dispersedPhaseAverage(o_dissipation);
+      const dfloat mixtureDissipation =
+          platform->linAlg->innerProd(mesh->Nlocal,
+                                      mesh->o_LMM,
+                                      o_dissipation,
+                                      platform->comm.mpiComm())/mesh->volume;
+
+      const dfloat dispersedDensity = carrierDensity/rhoRatio;
+      const dfloat dispersedViscosity = carrierViscosity/muRatio;
+      const dfloat reLambdaCarrier =
+          carrierDensity*kCarrier
+          *sqrt(20.0/(3.0*carrierViscosity
+                     *fmax(epsCarrier, 1.0e-14)));
+      const dfloat reLambdaDispersed =
+          dispersedDensity*kDispersed
+          *sqrt(20.0/(3.0*dispersedViscosity
+                     *fmax(epsDispersed, 1.0e-14)));
+
+      const dfloat dispersedVolume = lsDiagnostic::enclosedVolume();
+      const dfloat interfaceArea = lsDiagnostic::interfacialArea();
+      const dfloat dispersedVolumeFraction = dispersedVolume/mesh->volume;
+      const dfloat surfaceEnergy = interfaceArea/(We*mesh->volume);
+      const auto carrierVelocity = lsDiagnostic::bulkPhaseAvgVelocity();
+      const auto dispersedVelocity =
+          lsDiagnostic::dispersedPhaseAvgVelocity();
+
+      if (platform->comm.mpiRank() == 0) {
+        printf("HIT2P t=% .6e  alphaD=% .6e  area=% .6e  se=% .6e  "
+               "kMix=% .6e  epsMix=% .6e  "
+               "kC=% .6e  kD=% .6e  epsC=% .6e  epsD=% .6e  "
+               "ReLambdaC=% .6e  ReLambdaD=% .6e  "
+               "uAvgC=(% .6e,% .6e,% .6e)  "
+               "uAvgD=(% .6e,% .6e,% .6e)\n",
+               time,
+               dispersedVolumeFraction,
+               interfaceArea,
+               surfaceEnergy,
+               mixtureTke,
+               mixtureDissipation,
+               kCarrier,
+               kDispersed,
+               epsCarrier,
+               epsDispersed,
+               reLambdaCarrier,
+               reLambdaDispersed,
+               carrierVelocity[0],
+               carrierVelocity[1],
+               carrierVelocity[2],
+               dispersedVelocity[0],
+               dispersedVelocity[1],
+               dispersedVelocity[2]);
+
+        fprintf(hit2pFile,
+                "%.16e %.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e %.16e\n",
+                time,
+                dispersedVolumeFraction,
+                interfaceArea,
+                surfaceEnergy,
+                mixtureTke,
+                mixtureDissipation,
+                kCarrier,
+                kDispersed,
+                epsCarrier,
+                epsDispersed,
+                reLambdaCarrier,
+                reLambdaDispersed,
+                carrierVelocity[0],
+                carrierVelocity[1],
+                carrierVelocity[2],
+                dispersedVelocity[0],
+                dispersedVelocity[1],
+                dispersedVelocity[2]);
+        fflush(hit2pFile);
+      }
+      firstDiagnostic = false;
+    }
+  }
+}

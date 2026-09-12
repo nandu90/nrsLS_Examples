@@ -85,6 +85,8 @@ add("clsTest" 2 "cls.par" "1;2;3;4" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
 add("tlsTest" 2 "tls.par" "1;2;3;4;5;6" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
 
+add("testDiagnostic" 2 "testDiagnostic.par" "1" "${USE_FP32}" "${dir}" "${BUILD_ONLY}")
+
 ###
 
 foreach(test ${TESTS})
