@@ -2,10 +2,10 @@ userSections = tlsr, clsr, lvlset
 
 [GENERAL]
 polynomialOrder = 7
-startFrom = "hit2p.fld"
+startFrom = "hit2p.fld"+time=0
 stopAt = endTime
-endTime = 50.0
-dt = targetCFL=0.25+max=2.0e-3
+endTime = 40.0
+dt = targetCFL=0.25+max=2.0e-3+initial=1e-5
 timeStepper = tombo2
 
 checkpointControl = simulationTime

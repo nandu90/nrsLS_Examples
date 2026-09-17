@@ -6,7 +6,7 @@
 # 256^3 DNS. Increase to 36^3 for approximately 252^3 intervals.
 #
 Box
--32 -32 -32            nelx,nely,nelz
+-36 -36 -36            nelx,nely,nelz
 -1.0 1.0 1.0
 -1.0 1.0 1.0
 -1.0 1.0 1.0
