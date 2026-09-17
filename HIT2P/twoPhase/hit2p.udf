@@ -14,7 +14,7 @@ static const bool singlePhase = false;
 static const dfloat rhoRatio = 10.0; // rho_carrier/rho_inside
 static const dfloat muRatio = 1.0;   // mu_carrier/mu_inside
 static const dfloat Re = 518.0;      // Bassenne scaling for Re_lambda ~= 87
-static const dfloat We = 29.25;      // conventional We = 3/2 We_L; We_L=19.5
+static const dfloat We = 20.0;      // We = 3/2 We_L / (u^2 l_e); u^2 = 2k/3; l_e = k^1.5 / epsilon; We_L (from paper = 19.5)
 static const dfloat carrierDensity = 1.0;
 static const dfloat carrierViscosity = 1.0/Re;
 
