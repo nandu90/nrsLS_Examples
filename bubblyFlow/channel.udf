@@ -15,6 +15,8 @@ static dfloat Re, We, Fr, Re_tau;
 static dfloat rhoRatio, muRatio;
 static dfloat rhol, mul, rhog, mug;
 
+static const bool singlePhase = true;
+
 static const dfloat voidFraction = 0.03;
 static const dfloat betam = 1.5;
 
@@ -37,10 +39,12 @@ void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
 
-  auto o_forceAcc =
-      platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  auto o_forceAcc = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
   platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_forceAcc);
-  lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+
+  if (!singlePhase) {
+    lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+  }
 
   auto o_fx = o_forceAcc.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
   auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
@@ -74,9 +78,11 @@ void preFluid(double time, int tstep)
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
-  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
-  //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
-  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  if (!singlePhase) {
+    options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+    //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+    options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+  }
 }
 
 void UDF_Setup()
@@ -94,51 +100,12 @@ void UDF_Setup()
   platform->linAlg->rescale(-pi/2.0, pi/2.0, mesh->o_z, platform->comm.mpiComm()); 
 
   lvlSet::setup();
-  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
-    dfloat bubbleRad = 0.3 / 2.0;
-    dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
 
-    int nBubbles = voidFraction * mesh->volume / bubbleVol;
+  auto o_tls = nrs->scalar->o_solution("tls");
+  auto o_cls = nrs->scalar->o_solution("cls");
+  const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
 
-    auto xmin = platform->linAlg->min(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
-    auto xmax = platform->linAlg->max(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
-    auto ymin = platform->linAlg->min(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
-    auto ymax = platform->linAlg->max(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
-    auto zmin = platform->linAlg->min(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
-    auto zmax = platform->linAlg->max(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
-
-    std::vector<dfloat> bubbleCoord;
-
-    if(platform->comm.mpiRank() == 0) {
-      bubbleCoord = generateBubbleCenters(nBubbles,
-        bubbleRad,
-        xmin, xmax,
-        ymin, ymax,
-        zmin, zmax,
-        bubbleRad * 2.0,
-        bubbleRad);
-    } 
-    else {
-      bubbleCoord.resize(3 * nBubbles);
-    }
-    MPI_Bcast(bubbleCoord.data(), 3 * nBubbles, MPI_DFLOAT, 0, platform->comm.mpiComm());
-
-    auto o_bubbleCoord = platform->deviceMemoryPool.reserve<dfloat>(bubbleCoord.size());
-    o_bubbleCoord.copyFrom(bubbleCoord.data());
-
-    auto o_tls = nrs->scalar->o_solution("tls");
-    tlsic(mesh->Nlocal, 
-          nBubbles,
-          bubbleRad,
-          o_bubbleCoord,
-          mesh->o_x,
-          mesh->o_y,
-          mesh->o_z,
-          o_tls);
-
-    auto o_cls = nrs->scalar->o_solution("cls");
-    lvlSet::initHeaviside(o_tls, o_cls);
-
+  if (!restarting) {
     auto o_ux = nrs->fluid->o_U.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
     auto o_uy = nrs->fluid->o_U.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
     auto o_uz = nrs->fluid->o_U.slice(2 * nrs->fluid->fieldOffset, mesh->Nlocal);
@@ -146,6 +113,66 @@ void UDF_Setup()
     platform->linAlg->fill(mesh->Nlocal, 0.0, o_ux);
     platform->linAlg->fill(mesh->Nlocal, 0.0, o_uy);
     platform->linAlg->fill(mesh->Nlocal, 0.0, o_uz);
+  }
+
+  if (singlePhase) {
+    if (!restarting) {
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_tls);
+      platform->linAlg->fill(mesh->Nlocal, 1.0, o_cls);
+    }
+  }
+  else {
+    bool initializeBubbles = !restarting;
+    if (restarting) {
+      const dfloat clsMinimum = platform->linAlg->min(mesh->Nlocal, o_cls, platform->comm.mpiComm());
+      initializeBubbles = clsMinimum > 1.0 - 1.0e-8;
+    }
+
+    // Initialize bubbles on a fresh run or when restarting from a uniform
+    // single-phase precursor. Preserve TLS/CLS on a two-phase restart.
+    if (initializeBubbles) {
+      dfloat bubbleRad = 0.3 / 2.0;
+      dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
+
+      int nBubbles = voidFraction * mesh->volume / bubbleVol;
+
+      auto xmin = platform->linAlg->min(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+      auto xmax = platform->linAlg->max(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+      auto ymin = platform->linAlg->min(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+      auto ymax = platform->linAlg->max(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+      auto zmin = platform->linAlg->min(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+      auto zmax = platform->linAlg->max(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+
+      std::vector<dfloat> bubbleCoord;
+
+      if(platform->comm.mpiRank() == 0) {
+        bubbleCoord = generateBubbleCenters(nBubbles,
+                                            bubbleRad,
+                                            xmin, xmax,
+                                            ymin, ymax,
+                                            zmin, zmax,
+                                            bubbleRad * 2.0,
+                                            bubbleRad);
+      }
+      else {
+        bubbleCoord.resize(3 * nBubbles);
+      }
+      MPI_Bcast(bubbleCoord.data(), 3 * nBubbles, MPI_DFLOAT, 0, platform->comm.mpiComm());
+
+      auto o_bubbleCoord = platform->deviceMemoryPool.reserve<dfloat>(bubbleCoord.size());
+      o_bubbleCoord.copyFrom(bubbleCoord.data());
+
+      tlsic(mesh->Nlocal,
+            nBubbles,
+            bubbleRad,
+            o_bubbleCoord,
+            mesh->o_x,
+            mesh->o_y,
+            mesh->o_z,
+            o_tls);
+
+      lvlSet::initHeaviside(o_tls, o_cls);
+    }
   }
 
   rhol = 1.0;
@@ -164,5 +191,7 @@ void UDF_Setup()
 void UDF_ExecuteStep(double time, int tstep)
 {
   y_p(time);
-  lvlSet::solve(time);
+  if (!singlePhase) {
+    lvlSet::solve(time);
+  }
 }
