@@ -3,11 +3,13 @@
 
 #include "yp.inc"
 #include "bubbleGen.inc"
+#include "lvlSetDiagnostics.inc"
 
 #ifdef __okl__
 
 #include "yp.oudf"
 #include "channel.oudf"
+#include "lvlSetDiagnostics.oudf"
 
 #endif
 
@@ -19,6 +21,77 @@ static const bool singlePhase = true;
 
 static const dfloat voidFraction = 0.03;
 static const dfloat betam = 1.5;
+
+static FILE *bubblyFile = nullptr;
+static dfloat referenceGasVolume = 0.0;
+
+void openBubblyFile(const bool restartingTwoPhase)
+{
+  static const char *header =
+      "# t alphaG volumeG relativeVolumeError area interfaceThickness "
+      "d32 surfaceEnergy kL kG "
+      "uLx uLy uLz uGx uGy uGz slipX slipY slipZ slipMagnitude\n";
+
+  if (platform->comm.mpiRank() != 0) {
+    return;
+  }
+
+  if (restartingTwoPhase) {
+    dfloat restartTime = 0.0;
+    platform->options.getArgs("START TIME", restartTime);
+
+    std::ifstream input("bubbly.dat");
+    std::ofstream output("bubbly.dat.tmp", std::ios::trunc);
+    if (!output) {
+      fprintf(stderr, "Unable to open bubbly.dat.tmp for writing\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+
+    output << header;
+    bool foundReferenceVolume = false;
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      std::istringstream values(line);
+      dfloat fileTime = 0.0;
+      dfloat fileAlphaGas = 0.0;
+      dfloat fileGasVolume = 0.0;
+      if (values >> fileTime >> fileAlphaGas >> fileGasVolume) {
+        if (!foundReferenceVolume && fileGasVolume > 0.0) {
+          referenceGasVolume = fileGasVolume;
+          foundReferenceVolume = true;
+        }
+        if (fileTime < restartTime - 1.0e-12) {
+          output << line << '\n';
+        }
+      }
+    }
+    input.close();
+    output.close();
+
+    if (rename("bubbly.dat.tmp", "bubbly.dat") != 0) {
+      fprintf(stderr,
+              "Unable to replace bubbly.dat after trimming restart history\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+    bubblyFile = fopen("bubbly.dat", "a");
+  }
+  else {
+    bubblyFile = fopen("bubbly.dat", "w");
+    if (bubblyFile) {
+      fprintf(bubblyFile, "%s", header);
+    }
+  }
+
+  if (!bubblyFile) {
+    fprintf(stderr, "Unable to open bubbly.dat for writing\n");
+    MPI_Abort(platform->comm.mpiComm(), 1);
+  }
+  fflush(bubblyFile);
+}
 
 void uservp(double time)
 {
@@ -104,6 +177,7 @@ void UDF_Setup()
   auto o_tls = nrs->scalar->o_solution("tls");
   auto o_cls = nrs->scalar->o_solution("cls");
   const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
+  bool initializedBubbles = false;
 
   if (!restarting) {
     auto o_ux = nrs->fluid->o_U.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
@@ -131,6 +205,7 @@ void UDF_Setup()
     // Initialize bubbles on a fresh run or when restarting from a uniform
     // single-phase precursor. Preserve TLS/CLS on a two-phase restart.
     if (initializeBubbles) {
+      initializedBubbles = true;
       dfloat bubbleRad = 0.3 / 2.0;
       dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
 
@@ -173,6 +248,15 @@ void UDF_Setup()
 
       lvlSet::initHeaviside(o_tls, o_cls);
     }
+
+    referenceGasVolume = lsDiagnostic::enclosedVolume();
+    const bool restartingTwoPhase = restarting && !initializedBubbles;
+    openBubblyFile(restartingTwoPhase);
+    MPI_Bcast(&referenceGasVolume,
+              1,
+              MPI_DFLOAT,
+              0,
+              platform->comm.mpiComm());
   }
 
   rhol = 1.0;
@@ -190,8 +274,161 @@ void UDF_Setup()
 
 void UDF_ExecuteStep(double time, int tstep)
 {
-  y_p(time);
   if (!singlePhase) {
     lvlSet::solve(time);
+  }
+
+  static bool firstDiagnostic = true;
+  if (firstDiagnostic || tstep % 100 == 0) {
+    auto mesh = nrs->meshV;
+    const auto offset = nrs->fluid->fieldOffset;
+    auto o_U = nrs->fluid->o_U;
+
+    const auto wallStatistics = y_p(time);
+    const dfloat measuredReTau = wallStatistics.frictionVelocityAverage*(Re/2.0);
+    const dfloat pressureGradient = 4.0*rhol*pow(Re_tau/Re, 2.0) + rhol/Fr;
+
+    std::array<dfloat, 3> bulkVelocity = {0.0, 0.0, 0.0};
+    for (int component = 0; component < mesh->dim; ++component) {
+      bulkVelocity[component] = platform->linAlg->innerProd(
+                                mesh->Nlocal,
+                                mesh->o_LMM,
+                                o_U.slice(component*offset, mesh->Nlocal),
+                                platform->comm.mpiComm())/mesh->volume;
+    }
+
+    poolDeviceMemory<dfloat> o_uPrime(nrs->fluid->fieldOffsetSum);
+    poolDeviceMemory<dfloat> o_specificEnergy(offset);
+    o_uPrime.copyFrom(o_U, nrs->fluid->fieldOffsetSum);
+    for (int component = 0; component < mesh->dim; ++component) {
+      platform->linAlg->add(mesh->Nlocal,
+                            -bulkVelocity[component],
+                            o_uPrime.slice(component*offset, mesh->Nlocal));
+    }
+    platform->linAlg->magSqrVector(mesh->Nlocal,
+                                   offset,
+                                   o_uPrime,
+                                   o_specificEnergy);
+    platform->linAlg->scale(mesh->Nlocal, 0.5, o_specificEnergy);
+    const dfloat kMonitor =
+        platform->linAlg->innerProd(mesh->Nlocal,
+                                    mesh->o_LMM,
+                                    o_specificEnergy,
+                                    platform->comm.mpiComm())/mesh->volume;
+
+    if (platform->comm.mpiRank() == 0) {
+      printf("CHANNEL mode=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
+             "ReTau=% .6e  dpdx=% .6e  kMonitor=% .6e\n",
+             singlePhase ? "SP" : "TP",
+             time,
+             bulkVelocity[0],
+             wallStatistics.frictionVelocityAverage,
+             measuredReTau,
+             pressureGradient,
+             kMonitor);
+    }
+
+    if (!singlePhase) {
+      const dfloat gasVolume = lsDiagnostic::enclosedVolume();
+      const dfloat alphaGas = gasVolume/mesh->volume;
+      const dfloat relativeVolumeError =
+          referenceGasVolume > 0.0
+              ? fabs((gasVolume - referenceGasVolume)/referenceGasVolume)
+              : 0.0;
+      const dfloat interfaceArea = lsDiagnostic::interfacialArea();
+      const dfloat interfaceThickness = lsDiagnostic::interfaceThickness();
+      const dfloat d32 = lsDiagnostic::sauterMeanDiameter();
+      const dfloat surfaceEnergy = interfaceArea/(We*mesh->volume);
+
+      const auto liquidVelocity = lsDiagnostic::bulkPhaseAvgVelocity();
+      const auto gasVelocity = lsDiagnostic::dispersedPhaseAvgVelocity();
+      const std::array<dfloat, 3> slipVelocity = {
+          gasVelocity[0] - liquidVelocity[0],
+          gasVelocity[1] - liquidVelocity[1],
+          gasVelocity[2] - liquidVelocity[2]};
+      const dfloat slipMagnitude =
+          sqrt(slipVelocity[0]*slipVelocity[0]
+               + slipVelocity[1]*slipVelocity[1]
+               + slipVelocity[2]*slipVelocity[2]);
+
+      o_uPrime.copyFrom(o_U, nrs->fluid->fieldOffsetSum);
+      for (int component = 0; component < mesh->dim; ++component) {
+        platform->linAlg->add(
+            mesh->Nlocal,
+            -liquidVelocity[component],
+            o_uPrime.slice(component*offset, mesh->Nlocal));
+      }
+      platform->linAlg->magSqrVector(mesh->Nlocal,
+                                     offset,
+                                     o_uPrime,
+                                     o_specificEnergy);
+      platform->linAlg->scale(mesh->Nlocal, 0.5, o_specificEnergy);
+      const dfloat liquidTke =
+          lsDiagnostic::bulkPhaseAverage(o_specificEnergy);
+
+      o_uPrime.copyFrom(o_U, nrs->fluid->fieldOffsetSum);
+      for (int component = 0; component < mesh->dim; ++component) {
+        platform->linAlg->add(
+            mesh->Nlocal,
+            -gasVelocity[component],
+            o_uPrime.slice(component*offset, mesh->Nlocal));
+      }
+      platform->linAlg->magSqrVector(mesh->Nlocal,
+                                     offset,
+                                     o_uPrime,
+                                     o_specificEnergy);
+      platform->linAlg->scale(mesh->Nlocal, 0.5, o_specificEnergy);
+      const dfloat gasTke =
+          lsDiagnostic::dispersedPhaseAverage(o_specificEnergy);
+
+      if (platform->comm.mpiRank() == 0) {
+        printf("BUBBLY t=% .6e  alphaG=% .6e  dV/V0=% .6e  "
+               "area=% .6e  d32=% .6e  kL=% .6e  kG=% .6e  "
+               "uL=(% .6e,% .6e,% .6e)  "
+               "uG=(% .6e,% .6e,% .6e)  |slip|=% .6e\n",
+               time,
+               alphaGas,
+               relativeVolumeError,
+               interfaceArea,
+               d32,
+               liquidTke,
+               gasTke,
+               liquidVelocity[0],
+               liquidVelocity[1],
+               liquidVelocity[2],
+               gasVelocity[0],
+               gasVelocity[1],
+               gasVelocity[2],
+               slipMagnitude);
+
+        fprintf(bubblyFile,
+                "%.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e\n",
+                time,
+                alphaGas,
+                gasVolume,
+                relativeVolumeError,
+                interfaceArea,
+                interfaceThickness,
+                d32,
+                surfaceEnergy,
+                liquidTke,
+                gasTke,
+                liquidVelocity[0],
+                liquidVelocity[1],
+                liquidVelocity[2],
+                gasVelocity[0],
+                gasVelocity[1],
+                gasVelocity[2],
+                slipVelocity[0],
+                slipVelocity[1],
+                slipVelocity[2],
+                slipMagnitude);
+        fflush(bubblyFile);
+      }
+    }
+    firstDiagnostic = false;
   }
 }
