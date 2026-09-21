@@ -324,8 +324,9 @@ def main():
         carrierMean = np.mean(carrierSpectra, axis=0)
         dispersedMean = np.mean(dispersedSpectra, axis=0)
         interactionMean = np.mean(interactionSpectra, axis=0)
-        carrierMeanSpecific = carrierMean/alphaCarrier
-        dispersedMeanSpecific = dispersedMean/alphaDispersed
+        carrierMeanSpecific = carrierMean/(rhoCarrier*alphaCarrier)
+        dispersedMeanSpecific = dispersedMean/(
+            rhoDispersed*alphaDispersed)
 
     np.savez(
         os.path.join(outputDir, "spectra.npz"),
@@ -344,6 +345,8 @@ def main():
         dispersedMeanSpecific=dispersedMeanSpecific,
         alphaCarrier=np.array(alphaCarrier),
         alphaDispersed=np.array(alphaDispersed),
+        rhoCarrier=np.array(rhoCarrier),
+        rhoDispersed=np.array(rhoDispersed),
         singlePhase=np.array(singlePhase),
     )
 
@@ -370,7 +373,7 @@ def main():
         os.path.join(outputDir, "phaseSpectrum.dat"),
         phaseOutput,
         header=("k Ecarrier Edispersed Einteraction "
-                "EcarrierSpecific EdispersedSpecific"),
+                "EcarrierOverRhoAlpha EdispersedOverRhoAlpha"),
     )
 
     fourierMean = np.mean(fourierSpectra, axis=0)
@@ -405,7 +408,7 @@ def main():
         plotnow(
             os.path.join(outputDir, "filteredPhaseSpectrum"),
             r"$\kappa_\ell$",
-            r"$E_\ell/\langle\phi\rangle$",
+            r"$E_{m,\ell}/(\rho_m\langle\phi_m\rangle)$",
             [kFilter, kFilter],
             [carrierMeanSpecific, dispersedMeanSpecific],
             ["Carrier phase", "Dispersed phase"],
