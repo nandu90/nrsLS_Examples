@@ -1,8 +1,8 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = channel.fld
-polynomialOrder = 9
+#startFrom = channel.fld
+polynomialOrder = 7
 stopAt = endTime
 endTime = 50
 #stopAt = numSteps
@@ -22,7 +22,6 @@ equation = navierStokes+variableViscosity
 
 [FLUID VELOCITY]
 boundaryTypeMap = zeroDirichlet
-regularization = svv+svvCoeff=1.0+filterPower=4.0 #+ hpfrt+nModes=1+scalingCoeff=10
 #regularization = hpfrt+nModes=1+scalingCoeff=10
 residualTol = 1e-8
 density = 1.0
@@ -41,28 +40,22 @@ boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
 residualTol = 1e-8
-regularization = svv+svvCoeff=1.0+filterPower=2.0
+regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR CLS]
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
 residualTol = 1e-8
-regularization = svv+svvCoeff=1.0+filterPower=2.0
+regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [TLSR]
 solveFrequency = 0.02
-regularization = svv+svvCoeff=1.0+filterPower=6.0
 residualTol = 1e-8
-targetCFL = 0.4
-maximumSteps = 200
 
 [CLSR]
 boundaryTypeMap = zeroNeumann
 solveFrequency = 0.002
-targetCFL = 0.2
-maximumSteps = 20
-regularization = svv+svvCoeff=1.0+filterPower=4.0
 residualTol = 1e-8
 
 [LVLSET]
