@@ -31,9 +31,9 @@ viscosity = -2800.0
 residualTol = 1e-4
 
 [SCALAR TEMPERATURE]
-solver = none
 boundaryTypeMap = udfNeumann
 residualTol = 1e-6
+regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR TLS]
 boundaryTypeMap = zeroNeumann
