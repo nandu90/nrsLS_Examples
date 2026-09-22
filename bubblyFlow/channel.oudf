@@ -43,6 +43,90 @@
   }
 }
 
+@kernel void assembleBudgetDiagnostics(const dlong N,
+                                       const dlong offset,
+                                       const dfloat pressureGradient,
+                                       const dfloat inverseFroude,
+                                       @ restrict const dfloat *U,
+                                       @ restrict const dfloat *RHO,
+                                       @ restrict const dfloat *MUE,
+                                       @ restrict const dfloat *CLS,
+                                       @ restrict const dfloat *SIJ,
+                                       @ restrict const dfloat *SURFACEACC,
+                                       @ restrict dfloat *BUDGET)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat ux = U[n + 0*offset];
+    const dfloat uy = U[n + 1*offset];
+    const dfloat uz = U[n + 2*offset];
+    const dfloat rho = RHO[n];
+    const dfloat mu = MUE[n];
+
+    const dfloat fsx = rho*SURFACEACC[n + 0*offset];
+    const dfloat fsy = rho*SURFACEACC[n + 1*offset];
+    const dfloat fsz = rho*SURFACEACC[n + 2*offset];
+
+    const dfloat s11 = SIJ[n + 0*offset];
+    const dfloat s12 = SIJ[n + 1*offset];
+    const dfloat s13 = SIJ[n + 2*offset];
+    const dfloat s22 = SIJ[n + 3*offset];
+    const dfloat s23 = SIJ[n + 4*offset];
+    const dfloat s33 = SIJ[n + 5*offset];
+
+    BUDGET[n + 0*offset] = ux;
+    BUDGET[n + 1*offset] = uy;
+    BUDGET[n + 2*offset] = uz;
+    BUDGET[n + 3*offset] = rho;
+    BUDGET[n + 4*offset] = mu;
+    BUDGET[n + 5*offset] = CLS[n];
+    BUDGET[n + 6*offset] = fsx;
+    BUDGET[n + 7*offset] = fsy;
+    BUDGET[n + 8*offset] = fsz;
+    BUDGET[n + 9*offset] = ux*fsx + uy*fsy + uz*fsz;
+    BUDGET[n + 10*offset] = 2.0*mu*(s11*s11 + s22*s22 + s33*s33
+                           + 2.0*(s12*s12 + s13*s13 + s23*s23));
+    BUDGET[n + 11*offset] = pressureGradient*ux;
+    BUDGET[n + 12*offset] = -rho*inverseFroude*ux;
+    BUDGET[n + 13*offset] = 2.0*mu*s11;
+    BUDGET[n + 14*offset] = 2.0*mu*s12;
+    BUDGET[n + 15*offset] = 2.0*mu*s13;
+    BUDGET[n + 16*offset] = 2.0*mu*s22;
+    BUDGET[n + 17*offset] = 2.0*mu*s23;
+    BUDGET[n + 18*offset] = 2.0*mu*s33;
+    BUDGET[n + 19*offset] = ux*fsx;
+    BUDGET[n + 20*offset] = uy*fsy;
+    BUDGET[n + 21*offset] = uz*fsz;
+    BUDGET[n + 22*offset] = rho*ux;
+    BUDGET[n + 23*offset] = rho*uy;
+    BUDGET[n + 24*offset] = rho*uz;
+  }
+}
+
+@kernel void extractPlanarProfile(const int Nq,
+                                  const int Np,
+                                  const int numberElementsY,
+                                  const int numberFields,
+                                  const dlong offset,
+                                  @ restrict const dlong *PROFILEELEMENT,
+                                  @ restrict const dfloat *PLANAR,
+                                  @ restrict dfloat *PROFILE)
+{
+  for (int ey = 0; ey < numberElementsY; ++ey; @outer(0)) {
+    const dlong element = PROFILEELEMENT[ey];
+    for (int j = 0; j < Nq; ++j; @inner(0)) {
+      const int point = ey*Nq + j;
+      for (int field = 0; field < numberFields; ++field) {
+        dfloat value = 0.0;
+        if (element >= 0) {
+          const dlong node = element*Np + j*Nq;
+          value = PLANAR[field*offset + node];
+        }
+        PROFILE[field*(numberElementsY*Nq) + point] = value;
+      }
+    }
+  }
+}
+
 void udfDirichlet(bcData *bc)
 {
   if(isField("scalar cls") || isField("clsr")) {

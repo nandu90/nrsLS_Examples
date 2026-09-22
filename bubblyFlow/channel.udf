@@ -18,12 +18,95 @@ static dfloat rhoRatio, muRatio;
 static dfloat rhol, mul, rhog, mug;
 
 static const bool singlePhase = true;
+static const bool collectAvg = false;
 
 static const dfloat voidFraction = 0.03;
 static const dfloat betam = 1.5;
 
 static FILE *bubblyFile = nullptr;
+static FILE *budgetProfileFile = nullptr;
 static dfloat referenceGasVolume = 0.0;
+static deviceMemory<dfloat> o_surfaceTensionAcceleration;
+static deviceMemory<dfloat> o_budgetDiagnosticFields;
+static deviceMemory<dfloat> o_profileInstant;
+static deviceMemory<dfloat> o_profileAverage;
+static deviceMemory<dlong> o_profileElement;
+static std::vector<dfloat> profileY;
+static dfloat profileAveragingTime = 0.0;
+static dfloat previousProfileTime = 0.0;
+static bool firstProfileSample = true;
+
+static constexpr int numberElementsX = 50;
+static constexpr int numberElementsY = 25;
+static constexpr int numberElementsZ = 25;
+
+enum BudgetDiagnosticField
+{
+  meanU = 0,
+  meanV,
+  meanW,
+  meanRho,
+  meanMu,
+  meanCls,
+  capillaryForceX,
+  capillaryForceY,
+  capillaryForceZ,
+  capillaryPower,
+  viscousDissipation,
+  pressureGradientPower,
+  gravityPower,
+  viscousStress11,
+  viscousStress12,
+  viscousStress13,
+  viscousStress22,
+  viscousStress23,
+  viscousStress33,
+  velocityCapillaryX,
+  velocityCapillaryY,
+  velocityCapillaryZ,
+  densityVelocityX,
+  densityVelocityY,
+  densityVelocityZ,
+  numberOfBudgetDiagnosticFields
+};
+
+static const std::array<const char *, numberOfBudgetDiagnosticFields>
+    budgetFieldNames = {
+        "u", "v", "w", "rho", "mu", "cls",
+        "fSigmaX", "fSigmaY", "fSigmaZ", "surfaceTensionPower",
+        "viscousDissipation", "pressureGradientPower", "gravityPower",
+        "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
+        "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW"};
+
+void writeBudgetProfiles(const dfloat time)
+{
+  if (profileAveragingTime <= 0.0) {
+    return;
+  }
+
+  const int numberProfilePoints = numberElementsY*nrs->meshV->Nq;
+  std::vector<dfloat> values(
+      numberOfBudgetDiagnosticFields*numberProfilePoints);
+  o_profileAverage.copyTo(values);
+
+  if (platform->comm.mpiRank() == 0) {
+    fprintf(budgetProfileFile, "# intervalEnd %.16e duration %.16e points %d\n",
+            time, profileAveragingTime, numberProfilePoints);
+    for (int point = 0; point < numberProfilePoints; ++point) {
+      fprintf(budgetProfileFile, "%.16e", profileY[point]);
+      for (int field = 0; field < numberOfBudgetDiagnosticFields; ++field) {
+        fprintf(budgetProfileFile, " %.16e",
+                values[field*numberProfilePoints + point]);
+      }
+      fprintf(budgetProfileFile, "\n");
+    }
+    fprintf(budgetProfileFile, "\n");
+    fflush(budgetProfileFile);
+  }
+
+  platform->linAlg->fill(o_profileAverage.size(), 0.0, o_profileAverage);
+  profileAveragingTime = 0.0;
+}
 
 void openBubblyFile(const bool restartingTwoPhase)
 {
@@ -117,6 +200,9 @@ void preFluid(double time, int tstep)
 
   if (!singlePhase) {
     lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+    if (collectAvg) {
+      o_surfaceTensionAcceleration.copyFrom(o_forceAcc, nrs->fluid->fieldOffsetSum);
+    }
   }
 
   auto o_fx = o_forceAcc.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
@@ -270,11 +356,135 @@ void UDF_Setup()
   Fr = 4.35;
   We = 174.22;
   Re_tau = 280.0;
+
+  if (!singlePhase && collectAvg) {
+    const auto offset = nrs->fluid->fieldOffset;
+    const int numberProfilePoints = numberElementsY*mesh->Nq;
+    o_surfaceTensionAcceleration.resize(nrs->fluid->fieldOffsetSum);
+    o_budgetDiagnosticFields.resize(numberOfBudgetDiagnosticFields*offset);
+    o_profileInstant.resize(numberOfBudgetDiagnosticFields*numberProfilePoints);
+    o_profileAverage.resize(numberOfBudgetDiagnosticFields*numberProfilePoints);
+    o_profileElement.resize(numberElementsY);
+    platform->linAlg->fill(o_profileAverage.size(), 0.0, o_profileAverage);
+
+    std::vector<dlong> profileElement(numberElementsY, -1);
+    for (int element = 0; element < mesh->Nelements; ++element) {
+      const dlong globalElement = nek::localElementIdToGlobal(element);
+      const int ex = globalElement % numberElementsX;
+      const int ey = (globalElement/numberElementsX) % numberElementsY;
+      const int ez = globalElement/(numberElementsX*numberElementsY);
+      if (ex == 0 && ez == 0) {
+        profileElement[ey] = element;
+      }
+    }
+    o_profileElement.copyFrom(profileElement.data(), profileElement.size());
+
+    extractPlanarProfile(mesh->Nq, mesh->Np, numberElementsY, 1, offset,
+                         o_profileElement, mesh->o_y, o_profileInstant);
+    platform->comm.allreduce(o_profileInstant,
+                             numberProfilePoints,
+                             comm_t::op::sum,
+                             platform->comm.mpiComm());
+    profileY.resize(numberProfilePoints);
+    o_profileInstant.copyTo(profileY);
+
+    if (platform->comm.mpiRank() == 0) {
+      budgetProfileFile = fopen("budgetProfiles.dat", "w");
+      if (!budgetProfileFile) {
+        fprintf(stderr, "Unable to open budgetProfiles.dat for writing\n");
+        MPI_Abort(platform->comm.mpiComm(), 1);
+      }
+      fprintf(budgetProfileFile, "# y");
+      for (const auto *name : budgetFieldNames) {
+        fprintf(budgetProfileFile, " %s", name);
+      }
+      fprintf(budgetProfileFile, "\n");
+      fflush(budgetProfileFile);
+    }
+  }
 }
 
 void UDF_ExecuteStep(double time, int tstep)
 {
   if (!singlePhase) {
+    if (collectAvg) {
+      auto mesh = nrs->meshV;
+      const auto offset = nrs->fluid->fieldOffset;
+      const dfloat pressureGradient =
+          4.0*rhol*pow(Re_tau/Re, 2.0) + rhol/Fr;
+      auto o_rho = nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal);
+      auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
+      auto o_cls = nrs->scalar->o_solution("cls");
+      auto o_Sij = nrs->strainRate();
+
+      assembleBudgetDiagnostics(
+          mesh->Nlocal,
+          offset,
+          pressureGradient,
+          1.0/Fr,
+          nrs->fluid->o_U,
+          o_rho,
+          o_mue,
+          o_cls,
+          o_Sij,
+          o_surfaceTensionAcceleration,
+          o_budgetDiagnosticFields);
+
+      if (nrs->timeStepConverged) {
+        planarAvg(mesh,
+                  "xz",
+                  numberElementsX,
+                  numberElementsY,
+                  numberElementsZ,
+                  numberOfBudgetDiagnosticFields,
+                  offset,
+                  o_budgetDiagnosticFields);
+
+        const int numberProfilePoints = numberElementsY*mesh->Nq;
+        extractPlanarProfile(mesh->Nq,
+                             mesh->Np,
+                             numberElementsY,
+                             numberOfBudgetDiagnosticFields,
+                             offset,
+                             o_profileElement,
+                             o_budgetDiagnosticFields,
+                             o_profileInstant);
+        platform->comm.allreduce(
+            o_profileInstant,
+            numberOfBudgetDiagnosticFields*numberProfilePoints,
+            comm_t::op::sum,
+            platform->comm.mpiComm());
+
+        if (firstProfileSample) {
+          previousProfileTime = time;
+          firstProfileSample = false;
+        }
+        const dfloat interval = time - previousProfileTime;
+        if (interval > 0.0) {
+          const dfloat newAveragingTime = profileAveragingTime + interval;
+          const dfloat oldWeight = profileAveragingTime/newAveragingTime;
+          const dfloat newWeight = interval/newAveragingTime;
+          platform->linAlg->axpby(
+              numberOfBudgetDiagnosticFields*numberProfilePoints,
+              newWeight,
+              o_profileInstant,
+              oldWeight,
+              o_profileAverage);
+          profileAveragingTime = newAveragingTime;
+        }
+        previousProfileTime = time;
+      }
+      if (nrs->checkpointStep) {
+        writeBudgetProfiles(time);
+      }
+      else if (nrs->lastStep) {
+        writeBudgetProfiles(time);
+      }
+    }
+
+    // Advance the interface only after sampling.  This keeps CLS, material
+    // properties, and the saved capillary force synchronized with the fluid
+    // state for which that force was applied in preFluid().
     lvlSet::solve(time);
   }
 
