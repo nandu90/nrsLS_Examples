@@ -1,9 +1,11 @@
 #include "lvlSet.hpp"
-#include <random>
 
 #ifdef __okl__
+#include "lvlSetDiagnostics.oudf"
 #include "hit2p.oudf"
 #endif
+
+#include "lvlSetDiagnostics.inc"
 
 static const dfloat bubbleRadius = 0.5*M_PI;
 static const bool singlePhase = true;
@@ -12,7 +14,7 @@ static const bool singlePhase = true;
 static const dfloat rhoRatio = 10.0; // rho_carrier/rho_inside
 static const dfloat muRatio = 1.0;   // mu_carrier/mu_inside
 static const dfloat Re = 518.0;      // Bassenne scaling for Re_lambda ~= 87
-static const dfloat We = 29.25;      // conventional We = 3/2 We_L; We_L=19.5
+static const dfloat We = 20.0;      // We = 3/2 We_L / (u^2 l_e); u^2 = 2k/3; l_e = k^1.5 / epsilon; We_L (from paper = 19.5)
 static const dfloat carrierDensity = 1.0;
 static const dfloat carrierViscosity = 1.0/Re;
 
@@ -33,6 +35,64 @@ static dfloat forcingPower = 0.0;
 static dfloat taylorReynolds = 0.0;
 static dfloat measuredIntegralLength = 0.0;
 static dfloat uAvg[3] = {0.0, 0.0, 0.0};
+static FILE *hit2pFile = nullptr;
+
+void openHit2pFile(const bool restarting)
+{
+  static const char *header =
+      "# t alphaD area se kMix epsMix kC kD epsC epsD "
+      "ReLambdaC ReLambdaD uAvgCx uAvgCy uAvgCz "
+      "uAvgDx uAvgDy uAvgDz\n";
+
+  if (platform->comm.mpiRank() != 0) {
+    return;
+  }
+
+  if (restarting) {
+    dfloat restartTime = 0.0;
+    platform->options.getArgs("START TIME", restartTime);
+
+    std::ifstream input("hit2p.dat");
+    std::ofstream output("hit2p.dat.tmp", std::ios::trunc);
+    if (!output) {
+      fprintf(stderr, "Unable to open hit2p.dat.tmp for writing\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+
+    output << header;
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      std::istringstream values(line);
+      dfloat fileTime = 0.0;
+      if (values >> fileTime && fileTime < restartTime - 1.0e-12) {
+        output << line << '\n';
+      }
+    }
+    input.close();
+    output.close();
+
+    if (rename("hit2p.dat.tmp", "hit2p.dat") != 0) {
+      fprintf(stderr, "Unable to replace hit2p.dat after trimming restart history\n");
+      MPI_Abort(platform->comm.mpiComm(), 1);
+    }
+    hit2pFile = fopen("hit2p.dat", "a");
+  } else {
+    hit2pFile = fopen("hit2p.dat", "w");
+    if (hit2pFile) {
+      fprintf(hit2pFile, "%s", header);
+    }
+  }
+
+  if (!hit2pFile) {
+    fprintf(stderr, "Unable to open hit2p.dat for writing\n");
+    MPI_Abort(platform->comm.mpiComm(), 1);
+  }
+  fflush(hit2pFile);
+}
 
 void initializeHIT()
 {
@@ -302,7 +362,7 @@ void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   if(!singlePhase) {
     options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
-    options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+    // options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
     options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
   }
 }
@@ -352,6 +412,8 @@ void UDF_Setup()
                        o_tls);
       lvlSet::initHeaviside(o_tls, o_cls);
     }
+
+    openHit2pFile(restarting);
   }
 }
 
@@ -359,5 +421,133 @@ void UDF_ExecuteStep(double time, int tstep)
 {
   if (!singlePhase) {
     lvlSet::solve(time);
+
+    static bool firstDiagnostic = true;
+    if (firstDiagnostic || tstep % 100 == 0) {
+      auto mesh = nrs->meshV;
+      const auto offset = nrs->fluid->fieldOffset;
+      auto o_U = nrs->fluid->o_U;
+      auto o_rho = nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal);
+      auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
+
+      poolDeviceMemory<dfloat> o_specificEnergy(offset);
+      platform->linAlg->magSqrVector(mesh->Nlocal,
+                                     offset,
+                                     o_U,
+                                     o_specificEnergy);
+      platform->linAlg->scale(mesh->Nlocal, 0.5, o_specificEnergy);
+
+      const dfloat kCarrier =
+          lsDiagnostic::bulkPhaseAverage(o_specificEnergy);
+      const dfloat kDispersed =
+          lsDiagnostic::dispersedPhaseAverage(o_specificEnergy);
+
+      poolDeviceMemory<dfloat> o_mixtureEnergy(offset);
+      o_mixtureEnergy.copyFrom(o_specificEnergy, mesh->Nlocal);
+      platform->linAlg->axmy(mesh->Nlocal,
+                             1.0,
+                             o_rho,
+                             o_mixtureEnergy);
+      const dfloat mixtureTke =
+          platform->linAlg->innerProd(mesh->Nlocal,
+                                      mesh->o_LMM,
+                                      o_mixtureEnergy,
+                                      platform->comm.mpiComm())/mesh->volume;
+
+      auto o_Sij = nrs->strainRate();
+      poolDeviceMemory<dfloat> o_dissipation(offset);
+      poolDeviceMemory<dfloat> o_viscousFlux(3*offset);
+      poolDeviceMemory<dfloat> o_pressureFlux(3*offset);
+      assembleCarrierBudget(mesh->Nlocal,
+                            offset,
+                            o_U,
+                            nrs->fluid->o_P,
+                            o_mue,
+                            o_Sij,
+                            o_dissipation,
+                            o_viscousFlux,
+                            o_pressureFlux);
+
+      const dfloat epsCarrier =
+          lsDiagnostic::bulkPhaseAverage(o_dissipation);
+      const dfloat epsDispersed =
+          lsDiagnostic::dispersedPhaseAverage(o_dissipation);
+      const dfloat mixtureDissipation =
+          platform->linAlg->innerProd(mesh->Nlocal,
+                                      mesh->o_LMM,
+                                      o_dissipation,
+                                      platform->comm.mpiComm())/mesh->volume;
+
+      const dfloat dispersedDensity = carrierDensity/rhoRatio;
+      const dfloat dispersedViscosity = carrierViscosity/muRatio;
+      const dfloat reLambdaCarrier =
+          carrierDensity*kCarrier
+          *sqrt(20.0/(3.0*carrierViscosity
+                     *fmax(epsCarrier, 1.0e-14)));
+      const dfloat reLambdaDispersed =
+          dispersedDensity*kDispersed
+          *sqrt(20.0/(3.0*dispersedViscosity
+                     *fmax(epsDispersed, 1.0e-14)));
+
+      const dfloat dispersedVolume = lsDiagnostic::enclosedVolume();
+      const dfloat interfaceArea = lsDiagnostic::interfacialArea();
+      const dfloat dispersedVolumeFraction = dispersedVolume/mesh->volume;
+      const dfloat surfaceEnergy = interfaceArea/(We*mesh->volume);
+      const auto carrierVelocity = lsDiagnostic::bulkPhaseAvgVelocity();
+      const auto dispersedVelocity =
+          lsDiagnostic::dispersedPhaseAvgVelocity();
+
+      if (platform->comm.mpiRank() == 0) {
+        printf("HIT2P t=% .6e  alphaD=% .6e  area=% .6e  se=% .6e  "
+               "kMix=% .6e  epsMix=% .6e  "
+               "kC=% .6e  kD=% .6e  epsC=% .6e  epsD=% .6e  "
+               "ReLambdaC=% .6e  ReLambdaD=% .6e  "
+               "uAvgC=(% .6e,% .6e,% .6e)  "
+               "uAvgD=(% .6e,% .6e,% .6e)\n",
+               time,
+               dispersedVolumeFraction,
+               interfaceArea,
+               surfaceEnergy,
+               mixtureTke,
+               mixtureDissipation,
+               kCarrier,
+               kDispersed,
+               epsCarrier,
+               epsDispersed,
+               reLambdaCarrier,
+               reLambdaDispersed,
+               carrierVelocity[0],
+               carrierVelocity[1],
+               carrierVelocity[2],
+               dispersedVelocity[0],
+               dispersedVelocity[1],
+               dispersedVelocity[2]);
+
+        fprintf(hit2pFile,
+                "%.16e %.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e %.16e "
+                "%.16e %.16e %.16e %.16e %.16e %.16e\n",
+                time,
+                dispersedVolumeFraction,
+                interfaceArea,
+                surfaceEnergy,
+                mixtureTke,
+                mixtureDissipation,
+                kCarrier,
+                kDispersed,
+                epsCarrier,
+                epsDispersed,
+                reLambdaCarrier,
+                reLambdaDispersed,
+                carrierVelocity[0],
+                carrierVelocity[1],
+                carrierVelocity[2],
+                dispersedVelocity[0],
+                dispersedVelocity[1],
+                dispersedVelocity[2]);
+        fflush(hit2pFile);
+      }
+      firstDiagnostic = false;
+    }
   }
 }
