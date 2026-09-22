@@ -313,6 +313,126 @@ void collectBudgetProfiles(const dfloat time)
   }
 }
 
+struct TemperatureStatistics
+{
+  dfloat mean;
+  dfloat rms;
+  dfloat bulk;
+  dfloat wall;
+  dfloat wallToBulk;
+  dfloat stanton;
+  dfloat nusseltHalfGap;
+  dfloat nusseltFullGap;
+};
+
+TemperatureStatistics temperatureStatistics()
+{
+  auto mesh = nrs->scalar->mesh("temperature");
+  const auto offset = nrs->fluid->fieldOffset;
+  auto o_temperature = nrs->scalar->o_solution("temperature");
+  auto o_rhoCp = nrs->scalar->o_transportCoeff("temperature");
+  auto o_streamwiseVelocity =
+      nrs->fluid->o_U.slice(0*offset, mesh->Nlocal);
+
+  const dfloat temperatureMean = platform->linAlg->innerProd(
+      mesh->Nlocal,
+      mesh->o_LMM,
+      o_temperature,
+      platform->comm.mpiComm())/mesh->volume;
+
+  auto o_temperatureFluctuation =
+      platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  auto o_temperatureVariance =
+      platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  o_temperatureFluctuation.copyFrom(o_temperature, mesh->Nlocal);
+  platform->linAlg->add(mesh->Nlocal,
+                        -temperatureMean,
+                        o_temperatureFluctuation);
+  o_temperatureVariance.copyFrom(o_temperatureFluctuation, mesh->Nlocal);
+  platform->linAlg->axmy(mesh->Nlocal,
+                         1.0,
+                         o_temperatureFluctuation,
+                         o_temperatureVariance);
+  const dfloat temperatureRms = sqrt(platform->linAlg->innerProd(
+      mesh->Nlocal,
+      mesh->o_LMM,
+      o_temperatureVariance,
+      platform->comm.mpiComm())/mesh->volume);
+
+  // Mixing-cup temperature. The rho*cp weighting is needed when the two
+  // phases have different volumetric heat capacities.
+  auto o_energyFlux =
+      platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  auto o_temperatureEnergyFlux =
+      platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  o_energyFlux.copyFrom(o_streamwiseVelocity, mesh->Nlocal);
+  platform->linAlg->axmy(mesh->Nlocal, 1.0, o_rhoCp, o_energyFlux);
+  o_temperatureEnergyFlux.copyFrom(o_energyFlux, mesh->Nlocal);
+  platform->linAlg->axmy(mesh->Nlocal,
+                         1.0,
+                         o_temperature,
+                         o_temperatureEnergyFlux);
+  const dfloat integratedEnergyFlux = platform->linAlg->innerProd(
+      mesh->Nlocal,
+      mesh->o_LMM,
+      o_energyFlux,
+      platform->comm.mpiComm());
+  const dfloat integratedTemperatureEnergyFlux =
+      platform->linAlg->innerProd(mesh->Nlocal,
+                                  mesh->o_LMM,
+                                  o_temperatureEnergyFlux,
+                                  platform->comm.mpiComm());
+  const dfloat bulkTemperature = fabs(integratedEnergyFlux) > 1.0e-14
+      ? integratedTemperatureEnergyFlux/integratedEnergyFlux
+      : temperatureMean;
+
+  // The temperature and velocity wall IDs describe the same two channel
+  // walls. Using the velocity map avoids depending on the UDF-Neumann type ID.
+  std::vector<int> wallBoundaryIds;
+  for (auto &[key, bcID] : platform->app->bc->bIdToTypeId()) {
+    if (key.first == "fluid velocity" &&
+        bcID == bdryBase::bcType_zeroDirichlet) {
+      wallBoundaryIds.push_back(key.second + 1);
+    }
+  }
+
+  dfloat wallTemperature = temperatureMean;
+  if (!wallBoundaryIds.empty()) {
+    auto o_wallBoundaryIds = platform->device.malloc<int>(
+        wallBoundaryIds.size(), wallBoundaryIds.data());
+    auto o_one = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+    platform->linAlg->fill(mesh->Nlocal, 1.0, o_one);
+    const dfloat wallArea =
+        mesh->surfaceAreaMultiplyIntegrate(o_wallBoundaryIds, o_one);
+    const dfloat integratedWallTemperature =
+        mesh->surfaceAreaMultiplyIntegrate(o_wallBoundaryIds, o_temperature);
+    if (wallArea > 0.0) {
+      wallTemperature = integratedWallTemperature/wallArea;
+    }
+  }
+
+  const dfloat wallToBulk = wallTemperature - bulkTemperature;
+  dfloat stanton = 0.0;
+  dfloat nusseltHalfGap = 0.0;
+  dfloat nusseltFullGap = 0.0;
+  if (wallToBulk > 1.0e-14) {
+    // Unit wall heat flux and T scale q_w/(rho_l*cp_l*Ub) give
+    // St = 1/(Tw-Tb). Re uses the full gap, so Nu_H = Re*Pr*St.
+    stanton = 1.0/wallToBulk;
+    nusseltFullGap = Re*Pr*stanton;
+    nusseltHalfGap = 0.5*nusseltFullGap;
+  }
+
+  return {temperatureMean,
+          temperatureRms,
+          bulkTemperature,
+          wallTemperature,
+          wallToBulk,
+          stanton,
+          nusseltHalfGap,
+          nusseltFullGap};
+}
+
 void monitorFlow(const dfloat time, const int tstep)
 {
   static bool firstDiagnostic = true;
@@ -357,6 +477,7 @@ void monitorFlow(const dfloat time, const int tstep)
                                   mesh->o_LMM,
                                   o_specificEnergy,
                                   platform->comm.mpiComm())/mesh->volume;
+  const auto thermal = temperatureStatistics();
 
   if (platform->comm.mpiRank() == 0) {
     printf("CHANNEL mode=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
@@ -368,6 +489,18 @@ void monitorFlow(const dfloat time, const int tstep)
            measuredReTau,
            pressureGradient,
            kMonitor);
+    printf("THERMAL t=% .6e  Tmean=% .6e  Trms=% .6e  "
+           "Tb=% .6e  Tw=% .6e  Tw-Tb=% .6e  St=% .6e  "
+           "Nu_delta=% .6e  Nu_H=% .6e\n",
+           time,
+           thermal.mean,
+           thermal.rms,
+           thermal.bulk,
+           thermal.wall,
+           thermal.wallToBulk,
+           thermal.stanton,
+           thermal.nusseltHalfGap,
+           thermal.nusseltFullGap);
   }
 
   if (!singlePhase) {
