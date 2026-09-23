@@ -35,6 +35,60 @@ static const dfloat betam = 1.5;
 
 #include "postProcessing.inc"
 
+void initializeBubbleFields(mesh_t *mesh,
+                            const occa::memory& o_tls,
+                            const occa::memory& o_cls)
+{
+  const dfloat bubbleVolume = 4.0/3.0*M_PI*pow(bubbleRad, 3.0);
+  const int numberBubbles = voidFraction*mesh->volume/bubbleVolume;
+
+  const dfloat xmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+  const dfloat xmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+  const dfloat ymin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+  const dfloat ymax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+  const dfloat zmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+  const dfloat zmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+
+  std::vector<dfloat> bubbleCoordinates(3*numberBubbles);
+  if (platform->comm.mpiRank() == 0) {
+    bubbleCoordinates = generateBubbleCenters(numberBubbles,
+                                               bubbleRad,
+                                               xmin,
+                                               xmax,
+                                               ymin,
+                                               ymax,
+                                               zmin,
+                                               zmax,
+                                               2.0*bubbleRad,
+                                               bubbleRad);
+  }
+  MPI_Bcast(bubbleCoordinates.data(),
+            3*numberBubbles,
+            MPI_DFLOAT,
+            0,
+            platform->comm.mpiComm());
+
+  auto o_bubbleCoordinates =
+      platform->deviceMemoryPool.reserve<dfloat>(bubbleCoordinates.size());
+  o_bubbleCoordinates.copyFrom(bubbleCoordinates.data());
+
+  tlsic(mesh->Nlocal,
+        numberBubbles,
+        bubbleRad,
+        o_bubbleCoordinates,
+        mesh->o_x,
+        mesh->o_y,
+        mesh->o_z,
+        o_tls);
+  lvlSet::initHeaviside(o_tls, o_cls);
+}
+
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re/2.0);
@@ -170,7 +224,6 @@ void UDF_Setup()
   auto o_cls = nrs->scalar->o_solution("cls");
   auto o_temperature = nrs->scalar->o_solution("temperature");
   const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
-  bool initializedBubbles = false;
 
   if (!restarting) {
     auto o_ux = nrs->fluid->o_U.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
@@ -183,58 +236,10 @@ void UDF_Setup()
     platform->linAlg->fill(mesh->Nlocal, 0.0, o_temperature);
   }
 
-  bool initializeBubbles = !restarting;
-  if (restarting) {
-    const dfloat clsMinimum = platform->linAlg->min(mesh->Nlocal, o_cls, platform->comm.mpiComm());
-    initializeBubbles = clsMinimum > 1.0 - 1.0e-8;
-  }
-
-  // Initialize bubbles on a fresh run or when restarting from a uniform
-  // single-phase precursor. Preserve TLS/CLS on a two-phase restart.
-  if (initializeBubbles) {
-    initializedBubbles = true;
-    // The nondimensional half-gap is one, so d=0.3 and r=d/2=0.15.
-    dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
-
-    int nBubbles = voidFraction * mesh->volume / bubbleVol;
-
-    auto xmin = platform->linAlg->min(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
-    auto xmax = platform->linAlg->max(mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
-    auto ymin = platform->linAlg->min(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
-    auto ymax = platform->linAlg->max(mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
-    auto zmin = platform->linAlg->min(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
-    auto zmax = platform->linAlg->max(mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
-
-    std::vector<dfloat> bubbleCoord;
-
-    if(platform->comm.mpiRank() == 0) {
-      bubbleCoord = generateBubbleCenters(nBubbles,
-          bubbleRad,
-          xmin, xmax,
-          ymin, ymax,
-          zmin, zmax,
-          bubbleRad * 2.0,
-          bubbleRad);
-    }
-    else {
-      bubbleCoord.resize(3 * nBubbles);
-    }
-    MPI_Bcast(bubbleCoord.data(), 3 * nBubbles, MPI_DFLOAT, 0, platform->comm.mpiComm());
-
-    auto o_bubbleCoord = platform->deviceMemoryPool.reserve<dfloat>(bubbleCoord.size());
-    o_bubbleCoord.copyFrom(bubbleCoord.data());
-
-    tlsic(mesh->Nlocal,
-        nBubbles,
-        bubbleRad,
-        o_bubbleCoord,
-        mesh->o_x,
-        mesh->o_y,
-        mesh->o_z,
-        o_tls);
-
-    lvlSet::initHeaviside(o_tls, o_cls);
-
+  // Seed bubbles only on a fresh run. Every restart preserves its TLS/CLS.
+  const bool initializedBubbles = !restarting;
+  if (initializedBubbles) {
+    initializeBubbleFields(mesh, o_tls, o_cls);
   }
 
   rhol = 1.0;
