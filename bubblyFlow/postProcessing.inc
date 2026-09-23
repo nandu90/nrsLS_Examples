@@ -11,6 +11,7 @@ static constexpr int numberElementsZ = 40;
 
 static FILE *bubblyFile = nullptr;
 static FILE *budgetProfileFile = nullptr;
+static bool twoPhaseMonitorsEnabled = false;
 static dfloat referenceGasVolume = 0.0;
 static deviceMemory<dfloat> o_surfaceTensionAcceleration;
 static deviceMemory<dfloat> o_budgetDiagnosticFields;
@@ -63,10 +64,10 @@ static const std::array<const char *, numberOfBudgetDiagnosticFields>
 dfloat activePressureGradient()
 {
   if (platform->options.compareArgs("CONSTANT FLOW RATE", "TRUE")) {
-    return nrs->flowRateScaleFactor();
+    return rhol/Fr + nrs->flowRateScaleFactor();
   }
 
-  return 4.0*rhol*targetBulkVelocity*pow(Re_tau/Re, 2.0) + rhol/Fr;
+  return 4.0*rhol*Ubulk*pow(Re_tau/Re, 2.0) + rhol/Fr;
 }
 
 void writeBudgetProfiles(const dfloat time)
@@ -172,7 +173,15 @@ void postProcessingSetup(const bool restarting,
 {
   auto mesh = nrs->meshV;
 
-  if (!singlePhase) {
+  const auto clsField = nrs->scalar->nameToIndex.find("cls");
+  nekrsCheck(clsField == nrs->scalar->nameToIndex.end(),
+             platform->comm.mpiComm(),
+             EXIT_FAILURE,
+             "%s",
+             "CLS scalar is required by bubblyFlow post-processing");
+  twoPhaseMonitorsEnabled = nrs->scalar->compute[clsField->second];
+
+  if (twoPhaseMonitorsEnabled) {
     referenceGasVolume = lsDiagnostic::enclosedVolume();
     const bool restartingTwoPhase = restarting && !initializedBubbles;
     openBubblyFile(restartingTwoPhase);
@@ -183,7 +192,7 @@ void postProcessingSetup(const bool restarting,
               platform->comm.mpiComm());
   }
 
-  if (!singlePhase && collectAvg) {
+  if (twoPhaseMonitorsEnabled && collectAvg) {
     const auto offset = nrs->fluid->fieldOffset;
     const int numberProfilePoints = numberElementsY*mesh->Nq;
     nekrsCheck(mesh->NelementsGlobal !=
@@ -239,7 +248,7 @@ void postProcessingSetup(const bool restarting,
 void saveSurfaceTensionForPostProcessing(
     const occa::memory& o_forceAcceleration)
 {
-  if (!singlePhase && collectAvg) {
+  if (twoPhaseMonitorsEnabled && collectAvg) {
     o_surfaceTensionAcceleration.copyFrom(
         o_forceAcceleration, nrs->fluid->fieldOffsetSum);
   }
@@ -247,7 +256,7 @@ void saveSurfaceTensionForPostProcessing(
 
 void collectBudgetProfiles(const dfloat time)
 {
-  if (singlePhase || !collectAvg) {
+  if (!twoPhaseMonitorsEnabled || !collectAvg) {
     return;
   }
 
@@ -490,7 +499,7 @@ void monitorFlow(const dfloat time, const int tstep)
   if (platform->comm.mpiRank() == 0) {
     printf("CHANNEL mode=%s forcing=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
            "ReTau=% .6e  dpdx=% .6e  kMonitor=% .6e\n",
-           singlePhase ? "SP" : "TP",
+           twoPhaseMonitorsEnabled ? "TP" : "FROZEN",
            platform->options.compareArgs("CONSTANT FLOW RATE", "TRUE")
                ? "CFR" : "DPDX",
            time,
@@ -513,7 +522,7 @@ void monitorFlow(const dfloat time, const int tstep)
            thermal.nusseltFullGap);
   }
 
-  if (!singlePhase) {
+  if (twoPhaseMonitorsEnabled) {
     const dfloat gasVolume = lsDiagnostic::enclosedVolume();
     const dfloat alphaGas = gasVolume/mesh->volume;
     const dfloat relativeVolumeError =
