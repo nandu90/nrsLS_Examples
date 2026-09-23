@@ -10,10 +10,15 @@
 
 #endif
 
+// ATH reference targets. The bubble diameter is d=0.3*delta, hence
+// d/(2*delta)=0.15 for the full-gap length used by Re, We, and Fr.
 static const dfloat Re = 5600.0;
-static const dfloat Fr = 4.35;
-static const dfloat We = 174.22;
 static const dfloat Re_tau = 280.0;
+static const dfloat Eo = 0.9;
+static const dfloat Archimedes = 2.43e4;
+static const dfloat bubbleRad = 0.15;
+static const dfloat Fr = Re*Re*bubbleRad*bubbleRad*bubbleRad/Archimedes;
+static const dfloat We = Eo*Fr/(bubbleRad*bubbleRad);
 // Saturated water/steam properties at 7 MPa and 285.83 C. Ratios are
 // liquid/gas; Pr is based on the saturated-liquid properties.
 static const dfloat rhoRatio = 20.25254;
@@ -36,9 +41,8 @@ void uservp(double time)
   lvlSet::updateProperties(rhoRatio, muRatio, Re/2.0);
 
   // Re is based on the full channel height 2*delta, so the liquid thermal
-  // diffusivity based on delta and Ub is 2/(Re*Pr). Equal phase properties
-  // recover the model used to isolate hydrodynamic bubble-induced heat-
-  // transfer enhancement.
+  // diffusivity based on delta and Ub is 2/(Re*Pr). Gas coefficients follow
+  // from the 7 MPa saturated water/steam property ratios above.
   auto mesh = nrs->scalar->mesh("temperature");
   const dfloat kL = 2.0/(Re*Pr);
   const dfloat kG = kL / conductivityRatio;
@@ -204,7 +208,7 @@ void UDF_Setup()
     // single-phase precursor. Preserve TLS/CLS on a two-phase restart.
     if (initializeBubbles) {
       initializedBubbles = true;
-      dfloat bubbleRad = 0.3 / 2.0;
+      // The nondimensional half-gap is one, so d=0.3 and r=d/2=0.15.
       dfloat bubbleVol = 4.0/3.0 * pi * pow(bubbleRad, 3.0);
 
       int nBubbles = voidFraction * mesh->volume / bubbleVol;
