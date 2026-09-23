@@ -14,6 +14,7 @@
 // d/(2*delta)=0.15 for the full-gap length used by Re, We, and Fr.
 static const dfloat Re = 5600.0;
 static const dfloat Re_tau = 280.0;
+static const dfloat targetBulkVelocity = 1.0;
 static const dfloat Eo = 0.9;
 static const dfloat Archimedes = 2.43e4;
 static const dfloat bubbleRad = 0.15;
@@ -119,20 +120,18 @@ void preFluid(double time, int tstep)
     saveSurfaceTensionForPostProcessing(o_forceAcc);
   }
 
-  auto o_fx = o_forceAcc.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
-  auto dpdx = 4.0 * rhol * pow(Re_tau / Re, 2.0); //assumes Ub=1; delta=1
+  // NekRS supplies the streamwise forcing when constant-flow-rate control is
+  // enabled. Otherwise impose the ATH pressure gradient explicitly. Both
+  // formulations use Ub=targetBulkVelocity as the velocity scale.
+  if (platform->options.compareArgs("CONSTANT FLOW RATE", "FALSE")) {
+    auto o_fx = o_forceAcc.slice(0*nrs->fluid->fieldOffset, mesh->Nlocal);
+    const dfloat dpdx = 4.0*rhol*targetBulkVelocity*pow(Re_tau/Re, 2.0) + rhol/Fr;
 
-  dpdx += 1.0 / Fr * rhol; //to maintain Re_tau
-
-  auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
-  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
-  platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
-
-  platform->linAlg->axpby(mesh->Nlocal, 
-                          1.0,
-                          o_dpdx,
-                          1.0,
-                          o_fx);
+    auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+    auto o_rho = nrs->fluid->o_prop.slice(1*nrs->fluid->fieldOffset, mesh->Nlocal);
+    platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
+    platform->linAlg->axpby(mesh->Nlocal, 1.0, o_dpdx, 1.0, o_fx);
+  }
 
   platform->linAlg->axmyVector(mesh->Nlocal,
                                nrs->fluid->fieldOffset,

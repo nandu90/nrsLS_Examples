@@ -60,6 +60,15 @@ static const std::array<const char *, numberOfBudgetDiagnosticFields>
         "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
         "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW"};
 
+dfloat activePressureGradient()
+{
+  if (platform->options.compareArgs("CONSTANT FLOW RATE", "TRUE")) {
+    return nrs->flowRateScaleFactor();
+  }
+
+  return 4.0*rhol*targetBulkVelocity*pow(Re_tau/Re, 2.0) + rhol/Fr;
+}
+
 void writeBudgetProfiles(const dfloat time)
 {
   if (profileAveragingTime <= 0.0) {
@@ -244,8 +253,7 @@ void collectBudgetProfiles(const dfloat time)
 
   auto mesh = nrs->meshV;
   const auto offset = nrs->fluid->fieldOffset;
-  const dfloat pressureGradient =
-      4.0*rhol*pow(Re_tau/Re, 2.0) + rhol/Fr;
+  const dfloat pressureGradient = activePressureGradient();
   auto o_rho = nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal);
   auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
   auto o_cls = nrs->scalar->o_solution("cls");
@@ -448,8 +456,7 @@ void monitorFlow(const dfloat time, const int tstep)
   const auto wallStatistics = y_p(time);
   const dfloat measuredReTau =
       wallStatistics.frictionVelocityAverage*(Re/2.0);
-  const dfloat pressureGradient =
-      4.0*rhol*pow(Re_tau/Re, 2.0) + rhol/Fr;
+  const dfloat pressureGradient = activePressureGradient();
 
   std::array<dfloat, 3> bulkVelocity = {0.0, 0.0, 0.0};
   for (int component = 0; component < mesh->dim; ++component) {
@@ -481,9 +488,11 @@ void monitorFlow(const dfloat time, const int tstep)
   const auto thermal = temperatureStatistics();
 
   if (platform->comm.mpiRank() == 0) {
-    printf("CHANNEL mode=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
+    printf("CHANNEL mode=%s forcing=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
            "ReTau=% .6e  dpdx=% .6e  kMonitor=% .6e\n",
            singlePhase ? "SP" : "TP",
+           platform->options.compareArgs("CONSTANT FLOW RATE", "TRUE")
+               ? "CFR" : "DPDX",
            time,
            bulkVelocity[0],
            wallStatistics.frictionVelocityAverage,
