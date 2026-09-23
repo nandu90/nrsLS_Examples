@@ -35,10 +35,13 @@ static const dfloat betam = 1.5;
 
 #include "postProcessing.inc"
 
-void initializeBubbleFields(mesh_t *mesh,
-                            const occa::memory& o_tls,
-                            const occa::memory& o_cls)
+void initializeBubbleFields()
 {
+  auto mesh = nrs->meshV;
+
+  auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_tls = nrs->scalar->o_solution("cls");
+
   const dfloat bubbleVolume = 4.0/3.0*M_PI*pow(bubbleRad, 3.0);
   const int numberBubbles = voidFraction*mesh->volume/bubbleVolume;
 
@@ -239,7 +242,7 @@ void UDF_Setup()
   // Seed bubbles only on a fresh run. Every restart preserves its TLS/CLS.
   const bool initializedBubbles = !restarting;
   if (initializedBubbles) {
-    initializeBubbleFields(mesh, o_tls, o_cls);
+    initializeBubbleFields();
   }
 
   rhol = 1.0;

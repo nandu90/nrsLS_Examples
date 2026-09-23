@@ -1,20 +1,20 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-#startFrom = channel.fld
+#startFrom = "channel.fld" + time = 0
 polynomialOrder = 7
 stopAt = endTime
 endTime = 50
 #stopAt = numSteps
 #numSteps = 2000
-dt = initial=1.0e-5+targetCFL=1.0
+dt = initial=1.0e-5+targetCFL=0.4
 #dt = 1.0e-4
 timeStepper = tombo2
 
 checkpointControl = simulationTime
 checkPointInterval = 1.0
 
-#constFlowRate = meanVelocity=1.0+direction=X
+constFlowRate = meanVelocity=1.0+direction=X
 scalars = temperature, tls, cls
 
 [PROBLEMTYPE]
@@ -36,6 +36,7 @@ residualTol = 1e-6
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR TLS]
+solver = none
 boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -43,6 +44,7 @@ residualTol = 1e-8
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR CLS]
+solver = none
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -50,10 +52,12 @@ residualTol = 1e-8
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [TLSR]
+solver = none
 solveFrequency = 0.02
 residualTol = 1e-8
 
 [CLSR]
+solver = none
 boundaryTypeMap = zeroNeumann
 solveFrequency = 0.002
 residualTol = 1e-8
