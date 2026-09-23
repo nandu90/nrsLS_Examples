@@ -181,6 +181,7 @@ void postProcessingSetup(const bool restarting,
                    numberElementsX*numberElementsY*numberElementsZ,
                platform->comm.mpiComm(),
                EXIT_FAILURE,
+               "%s",
                "channel.box and UDF element counts are inconsistent");
     o_surfaceTensionAcceleration.resize(nrs->fluid->fieldOffsetSum);
     o_budgetDiagnosticFields.resize(numberOfBudgetDiagnosticFields*offset);
@@ -227,7 +228,7 @@ void postProcessingSetup(const bool restarting,
 }
 
 void saveSurfaceTensionForPostProcessing(
-    const deviceMemory<dfloat>& o_forceAcceleration)
+    const occa::memory& o_forceAcceleration)
 {
   if (!singlePhase && collectAvg) {
     o_surfaceTensionAcceleration.copyFrom(

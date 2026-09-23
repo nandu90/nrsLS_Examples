@@ -14,11 +14,13 @@ static const dfloat Re = 5600.0;
 static const dfloat Fr = 4.35;
 static const dfloat We = 174.22;
 static const dfloat Re_tau = 280.0;
-static const dfloat rhoRatio = 40.0;
-static const dfloat muRatio = 6.07;      //liquid / gas
-static const dfloat Pr = 1.0;
-static const dfloat conductivityRatio = 9.09;
-static const dfloat rhoCpRatio = 1.0/0.049;
+// Saturated water/steam properties at 7 MPa and 285.83 C. Ratios are
+// liquid/gas; Pr is based on the saturated-liquid properties.
+static const dfloat rhoRatio = 20.25254;
+static const dfloat muRatio = 4.81268;
+static const dfloat Pr = 0.862015;
+static const dfloat conductivityRatio = 9.08980;
+static const dfloat rhoCpRatio = 20.42604;
 
 static dfloat rhol, mul, rhog, mug;
 
@@ -68,11 +70,31 @@ void userf(double time)
 
   // Periodic, thermally fully developed channel with unit imposed heat flux.
   // For T = theta + G*x, theta obeys a periodic equation with source
-  // -rho*cp*G*u. With the heat-flux temperature scale and Ub=1, G=1.
-  const dfloat meanTemperatureGradient = 1.0;
+  // -rho*cp*G*u. G is evaluated below from the instantaneous energy flux.
   auto temperatureMesh = nrs->scalar->mesh("temperature");
   auto o_rhoCp = nrs->scalar->o_transportCoeff("temperature");
   auto o_temperatureSource = nrs->scalar->o_explicitTerms("temperature");
+
+  // For this plane channel, heated-wall area/domain volume = 1. Determine
+  // G from the instantaneous rho*cp-weighted flow so that the volume source
+  // exactly balances the two unit-flux walls. The fallback is used while the
+  // initially quiescent flow has negligible streamwise energy flux.
+  auto o_energyFlux =
+      platform->deviceMemoryPool.reserve<dfloat>(temperatureMesh->Nlocal);
+  o_energyFlux.copyFrom(nrs->fluid->o_U, temperatureMesh->Nlocal);
+  platform->linAlg->axmy(temperatureMesh->Nlocal,
+                         1.0,
+                         o_rhoCp,
+                         o_energyFlux);
+  const dfloat integratedEnergyFlux = platform->linAlg->innerProd(
+      temperatureMesh->Nlocal,
+      temperatureMesh->o_LMM,
+      o_energyFlux,
+      platform->comm.mpiComm());
+  const dfloat meanTemperatureGradient =
+      fabs(integratedEnergyFlux) > 1.0e-14
+          ? temperatureMesh->volume/integratedEnergyFlux
+          : 1.0;
   periodicHeatSource(temperatureMesh->Nlocal,
                      nrs->fluid->fieldOffset,
                      meanTemperatureGradient,
