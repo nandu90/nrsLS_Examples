@@ -1,0 +1,264 @@
+#include "lvlSet.hpp"
+#include <cmath>
+
+#include "bubbleGen.inc"
+
+#ifdef __okl__
+
+#include "channel.oudf"
+#include "postProcessing.oudf"
+
+#endif
+
+// ATH reference targets. The bubble diameter is d=0.3*delta, hence
+// d/(2*delta)=0.15 for the full-gap length used by Re, We, and Fr.
+static const dfloat Re = 5600.0;
+static const dfloat Re_tau = 280.0;
+static const dfloat Ubulk = 1.0;
+static const dfloat Eo = 0.9;
+static const dfloat Archimedes = 2.43e4;
+static const dfloat bubbleRad = 0.15;
+static const dfloat Fr = Re*Re*bubbleRad*bubbleRad*bubbleRad/Archimedes;
+static const dfloat We = Eo*Fr/(bubbleRad*bubbleRad) / 10.0; //for startup
+// Saturated water/steam properties at 7 MPa and 285.83 C. Ratios are
+// liquid/gas; Pr is based on the saturated-liquid properties.
+static const dfloat rhoRatio = 1.0; //20.25254;
+static const dfloat muRatio = 1.0; //4.81268;
+static const dfloat Pr = 0.862015;
+static const dfloat conductivityRatio = 1.0; //9.08980;
+static const dfloat rhoCpRatio = 1.0; //20.42604;
+
+static dfloat rhol, mul, rhog, mug;
+
+static const dfloat voidFraction = 0.03;
+static const dfloat betam = 1.5;
+
+#include "postProcessing.inc"
+
+void initializeBubbleFields()
+{
+  auto mesh = nrs->meshV;
+
+  auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_tls = nrs->scalar->o_solution("tls");
+
+  const dfloat bubbleVolume = 4.0/3.0*M_PI*pow(bubbleRad, 3.0);
+  const int numberBubbles = voidFraction*mesh->volume/bubbleVolume;
+
+  const dfloat xmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+  const dfloat xmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_x, platform->comm.mpiComm());
+  const dfloat ymin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+  const dfloat ymax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_y, platform->comm.mpiComm());
+  const dfloat zmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+  const dfloat zmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_z, platform->comm.mpiComm());
+
+  std::vector<dfloat> bubbleCoordinates(3*numberBubbles);
+  if (platform->comm.mpiRank() == 0) {
+    bubbleCoordinates = generateBubbleCenters(numberBubbles,
+                                               bubbleRad,
+                                               xmin,
+                                               xmax,
+                                               ymin,
+                                               ymax,
+                                               zmin,
+                                               zmax,
+                                               2.0*bubbleRad,
+                                               bubbleRad);
+  }
+  MPI_Bcast(bubbleCoordinates.data(),
+            3*numberBubbles,
+            MPI_DFLOAT,
+            0,
+            platform->comm.mpiComm());
+
+  auto o_bubbleCoordinates =
+      platform->deviceMemoryPool.reserve<dfloat>(bubbleCoordinates.size());
+  o_bubbleCoordinates.copyFrom(bubbleCoordinates.data());
+
+  tlsic(mesh->Nlocal,
+        numberBubbles,
+        bubbleRad,
+        o_bubbleCoordinates,
+        mesh->o_x,
+        mesh->o_y,
+        mesh->o_z,
+        o_tls);
+  lvlSet::initHeaviside(o_tls, o_cls);
+}
+
+void uservp(double time)
+{
+  lvlSet::updateProperties(rhoRatio, muRatio, Re/2.0);
+
+  // Re is based on the full channel height 2*delta, so the liquid thermal
+  // diffusivity based on delta and Ub is 2/(Re*Pr). Gas coefficients follow
+  // from the 7 MPa saturated water/steam property ratios above.
+  auto mesh = nrs->scalar->mesh("temperature");
+  const dfloat kL = 2.0/(Re*Pr);
+  const dfloat kG = kL / conductivityRatio;
+  const dfloat rhoCpL = 1.0;
+  const dfloat rhoCpG = rhoCpL / rhoCpRatio;
+
+  auto o_conductivity = nrs->scalar->o_diffusionCoeff("temperature");
+  auto o_rhoCp = nrs->scalar->o_transportCoeff("temperature");
+
+  auto o_cls = nrs->scalar->o_solution("cls");
+  updateThermalProperties(mesh->Nlocal,
+                          kL,
+                          kG,
+                          rhoCpL,
+                          rhoCpG,
+                          o_cls,
+                          o_conductivity,
+                          o_rhoCp);
+}
+
+void userf(double time)
+{
+  auto mesh = nrs->meshV;
+
+  // Periodic, thermally fully developed channel with unit imposed heat flux.
+  // For T = theta + G*x, theta obeys a periodic equation with source
+  // -rho*cp*G*u. G is evaluated below from the instantaneous energy flux.
+  auto temperatureMesh = nrs->scalar->mesh("temperature");
+  auto o_rhoCp = nrs->scalar->o_transportCoeff("temperature");
+  auto o_temperatureSource = nrs->scalar->o_explicitTerms("temperature");
+
+  // For this plane channel, heated-wall area/domain volume = 1. Determine
+  // G from the instantaneous rho*cp-weighted flow so that the volume source
+  // exactly balances the two unit-flux walls. The fallback is used while the
+  // initially quiescent flow has negligible streamwise energy flux.
+  auto o_energyFlux =
+      platform->deviceMemoryPool.reserve<dfloat>(temperatureMesh->Nlocal);
+  o_energyFlux.copyFrom(nrs->fluid->o_U, temperatureMesh->Nlocal);
+  platform->linAlg->axmy(temperatureMesh->Nlocal,
+                         1.0,
+                         o_rhoCp,
+                         o_energyFlux);
+  const dfloat integratedEnergyFlux = platform->linAlg->innerProd(
+      temperatureMesh->Nlocal,
+      temperatureMesh->o_LMM,
+      o_energyFlux,
+      platform->comm.mpiComm());
+  const dfloat meanTemperatureGradient =
+      fabs(integratedEnergyFlux) > 1.0e-14
+          ? temperatureMesh->volume/integratedEnergyFlux
+          : 1.0;
+  periodicHeatSource(temperatureMesh->Nlocal,
+                     nrs->fluid->fieldOffset,
+                     meanTemperatureGradient,
+                     nrs->fluid->o_U,
+                     o_rhoCp,
+                     o_temperatureSource);
+}
+
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  auto o_forceAcc = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_forceAcc);
+
+  lvlSet::applySurfaceTensionAcc(We, o_forceAcc);
+  saveSurfaceTensionForPostProcessing(o_forceAcc);
+
+  auto o_fx = o_forceAcc.slice(0*nrs->fluid->fieldOffset, mesh->Nlocal);
+  platform->linAlg->add(mesh->Nlocal, -1.0 / Fr, o_fx);
+
+  dfloat dpdx = 0.0;
+  dpdx += rhol / Fr; //to maintain Re_tau
+
+  if (platform->options.compareArgs("CONSTANT FLOW RATE", "FALSE")) {
+    dpdx += 4.0 * rhol * Ubulk * pow(Re_tau / Re, 2.0);
+  }
+
+  auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+
+  platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
+
+  platform->linAlg->axpby(mesh->Nlocal, 1.0, o_dpdx, 1.0, o_fx);
+
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               nrs->fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_forceAcc);
+
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              nrs->fluid->fieldOffset,
+                              1.0,
+                              o_forceAcc,
+                              1.0,
+                              nrs->fluid->o_JwF);
+}
+
+void UDF_Setup0(MPI_Comm comm, setupAide &options)
+{
+  options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
+}
+
+void UDF_Setup()
+{
+  nrs->userProperties = &uservp;
+  nrs->userSource = &userf;
+  nrs->preFluid = &preFluid;
+
+  auto mesh = nrs->meshV;
+
+  dfloat pi = M_PI;
+  platform->linAlg->rescale(-pi, pi, mesh->o_x, platform->comm.mpiComm()); 
+  platform->linAlg->rescale(-1.0, 1.0, mesh->o_y, platform->comm.mpiComm()); 
+  nearWallStretching(mesh->Nlocal, betam, mesh->o_y);
+  platform->linAlg->rescale(-pi/2.0, pi/2.0, mesh->o_z, platform->comm.mpiComm()); 
+
+  lvlSet::setup();
+
+  auto o_tls = nrs->scalar->o_solution("tls");
+  auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_temperature = nrs->scalar->o_solution("temperature");
+  const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
+
+  if (!restarting) {
+    auto o_ux = nrs->fluid->o_U.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
+    auto o_uy = nrs->fluid->o_U.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+    auto o_uz = nrs->fluid->o_U.slice(2 * nrs->fluid->fieldOffset, mesh->Nlocal);
+
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_ux);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_uy);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_uz);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, o_temperature);
+  }
+
+  // Seed bubbles only on a fresh run. Every restart preserves its TLS/CLS.
+  const bool initializedBubbles = !restarting;
+  if (initializedBubbles) {
+    initializeBubbleFields();
+  }
+
+  rhol = 1.0;
+  mul = 1.0;
+  rhog = rhol / rhoRatio;
+  mug = mul / muRatio;
+
+  postProcessingSetup(restarting, initializedBubbles);
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  postProcessingPreLS(time);
+
+  lvlSet::solve(time);
+
+  postProcessingPostLS(time, tstep);
+}
