@@ -1,3 +1,4 @@
+import argparse
 from mpi4py import MPI
 import glob
 import numpy as np
@@ -10,13 +11,26 @@ from pysemtools.datatypes.field import FieldRegistry
 from pysemtools.interpolation.probes import Probes
 
 
+def parseArguments():
+    parser = argparse.ArgumentParser(
+        description="Interpolate restart files onto an n x n x n grid")
+    parser.add_argument(
+        "n", type=int,
+        help="number of grid points in each coordinate direction")
+    args = parser.parse_args()
+    if args.n <= 0:
+        parser.error("n must be a positive integer")
+    return args
+
+
 def main():
+    args = parseArguments()
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
     restartFiles = sorted(glob.glob("*0.f00*"))
     outputDir = "interpolatedData"
-    n = 256
+    n = args.n
 
     if len(restartFiles) == 0:
         raise RuntimeError("No restart files matching *0.f00* were found")

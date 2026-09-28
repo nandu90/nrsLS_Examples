@@ -1,4 +1,5 @@
 from cycler import cycler
+import argparse
 import glob
 from mpi4py import MPI
 import numpy as np
@@ -177,14 +178,80 @@ def filteredPhaseEnergy(u, v, w, phiCarrier,
     return carrierSpectrum, dispersedSpectrum, interactionSpectrum
 
 
+def plotSpectra(outputDir, k, fourierMean, kFilter,
+                carrierMeanSpecific, dispersedMeanSpecific,
+                singlePhase, maximumWavenumber):
+    maximumWavenumber = min(128, maximumWavenumber)
+    plotMask = (k >= 1) & (k <= maximumWavenumber)
+    referenceMask = (k >= 5) & (k <= min(40, maximumWavenumber))
+
+    plotK = k[plotMask]
+    plotSpectrum = fourierMean[plotMask]
+    referenceK = k[referenceMask]
+
+    referenceWavenumber = 10
+    referenceIndex = np.argmin(np.abs(k - referenceWavenumber))
+    referenceSpectrum = fourierMean[referenceIndex]*(
+        referenceK/k[referenceIndex])**(-5.0/3.0)
+    xPadding = 1.15
+
+    plotnow(
+        os.path.join(outputDir, "fourierSpectrum"),
+        r"$\kappa$",
+        r"$E(\kappa)$",
+        [plotK, referenceK],
+        [plotSpectrum, referenceSpectrum],
+        ["Fourier spectrum", r"$\kappa^{-5/3}$"],
+        linestyles=["-", "--"],
+        markers=["o", ""],
+        ptype="loglog",
+        xlim=[1.0/xPadding, xPadding*maximumWavenumber],
+    )
+
+    if not singlePhase:
+        plotnow(
+            os.path.join(outputDir, "filteredPhaseSpectrum"),
+            r"$\kappa_\ell$",
+            r"$E_{m,\ell}/(\rho_m\langle\phi_m\rangle)$",
+            [kFilter, kFilter],
+            [carrierMeanSpecific, dispersedMeanSpecific],
+            ["Carrier phase", "Dispersed phase"],
+            linestyles=["-", "--"],
+            markers=["", ""],
+            ptype="loglog",
+        )
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Compute and plot spectra")
+    parser.add_argument("--plot-only", action="store_true",
+                        help="Plot previously generated spectraData/*.dat files without filtering")
+    args = parser.parse_args()
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
 
+    outputDir = "spectraData"
+    if args.plot_only:
+        if rank == 0:
+            fourierData = np.loadtxt(
+                os.path.join(outputDir, "fourierSpectrum.dat"), ndmin=2)
+            phaseData = np.loadtxt(
+                os.path.join(outputDir, "phaseSpectrum.dat"), ndmin=2)
+            if fourierData.shape[1] != 3 or phaseData.shape[1] != 6:
+                raise ValueError("Unexpected columns in spectraData/*.dat")
+            k, fourierMean = fourierData[:, 0], fourierData[:, 1]
+            kFilter = phaseData[:, 0]
+            singlePhase = np.all(phaseData[:, 1:4] == 0)
+            plotSpectra(outputDir, k, fourierMean, kFilter,
+                        phaseData[:, 4], phaseData[:, 5], singlePhase,
+                        int(round(kFilter[-1])))
+            print("Plotted spectra from %s/*.dat" % outputDir)
+        return
+
     inputFiles = sorted(glob.glob("interpolatedData/*.npz"))
     myInputFiles = inputFiles[rank::size]
-    outputDir = "spectraData"
 
     rhoCarrier = 1.0
     rhoDispersed = 0.1
@@ -376,46 +443,9 @@ def main():
                 "EcarrierOverRhoAlpha EdispersedOverRhoAlpha"),
     )
 
-    fourierMean = np.mean(fourierSpectra, axis=0)
-    maximumWavenumber = min(128, n//2)
-    plotMask = (k >= 1) & (k <= maximumWavenumber)
-    referenceMask = (k >= 5) & (k <= min(40, maximumWavenumber))
-
-    plotK = k[plotMask]
-    plotSpectrum = fourierMean[plotMask]
-    referenceK = k[referenceMask]
-
-    referenceWavenumber = 10
-    referenceIndex = np.argmin(np.abs(k - referenceWavenumber))
-    referenceSpectrum = fourierMean[referenceIndex]*(
-        referenceK/k[referenceIndex])**(-5.0/3.0)
-    xPadding = 1.15
-
-    plotnow(
-        os.path.join(outputDir, "fourierSpectrum"),
-        r"$\kappa$",
-        r"$E(\kappa)$",
-        [plotK, referenceK],
-        [plotSpectrum, referenceSpectrum],
-        ["Fourier spectrum", r"$\kappa^{-5/3}$"],
-        linestyles=["-", "--"],
-        markers=["o", ""],
-        ptype="loglog",
-        xlim=[1.0/xPadding, xPadding*maximumWavenumber],
-    )
-
-    if not singlePhase:
-        plotnow(
-            os.path.join(outputDir, "filteredPhaseSpectrum"),
-            r"$\kappa_\ell$",
-            r"$E_{m,\ell}/(\rho_m\langle\phi_m\rangle)$",
-            [kFilter, kFilter],
-            [carrierMeanSpecific, dispersedMeanSpecific],
-            ["Carrier phase", "Dispersed phase"],
-            linestyles=["-", "--"],
-            markers=["", ""],
-            ptype="loglog",
-        )
+    plotSpectra(outputDir, k, np.mean(fourierSpectra, axis=0),
+                kFilter, carrierMeanSpecific, dispersedMeanSpecific,
+                singlePhase, n//2)
 
     print("Wrote spectra to %s" % outputDir)
     print("Single phase: %s" % singlePhase)

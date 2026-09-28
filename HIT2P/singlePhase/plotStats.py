@@ -86,18 +86,37 @@ def main():
     eps = np.array([stats[ti][1] for ti in t])
     reLambda = np.array([stats[ti][2] for ti in t])
 
-    plotnow("ReLambda", r"$t$", r"$Re_\lambda$",
-            [t, t], [reLambda, np.full_like(t, np.mean(reLambda))],
-            [r"$Re_\lambda$", r"mean $= %.3f$" % np.mean(reLambda)],
-            linestyles=["-", ":"], markers=["", ""])
-    plotnow("tke", r"$t$", r"$k$",
-            [t, t], [k, np.full_like(t, np.mean(k))],
+    targetTke = 1.0
+    integralLength = 0.19*(2.0*np.pi)
+    turnoverVelocity = np.sqrt(2.0*targetTke/3.0)
+    targetDissipation = turnoverVelocity**3/integralLength
+    eddyTurnoverTime = integralLength/turnoverVelocity
+    targetReLambda = 87.0
+    normalizedTime = t/eddyTurnoverTime
+
+    plotnow("ReLambda", r"$t/t_e$", r"$Re_\lambda$",
+            [normalizedTime, normalizedTime, normalizedTime],
+            [reLambda,
+             np.full_like(t, np.mean(reLambda)),
+             np.full_like(t, targetReLambda)],
+            [r"$Re_\lambda$",
+             r"mean $= %.3f$" % np.mean(reLambda),
+             r"$Re_{\lambda,t}=%.0f$" % targetReLambda],
+            linestyles=["-", ":", "--"], markers=["", "", ""])
+    plotnow("tke", r"$t/t_e$", r"$k$",
+            [normalizedTime, normalizedTime],
+            [k, np.full_like(t, np.mean(k))],
             [r"$k$", r"mean $= %.3f$" % np.mean(k)],
             linestyles=["-", ":"], markers=["", ""])
-    plotnow("dissipation", r"$t$", r"$\epsilon$",
-            [t, t], [eps, np.full_like(t, np.mean(eps))],
-            [r"$\epsilon$", r"mean $= %.3f$" % np.mean(eps)],
-            linestyles=["-", ":"], markers=["", ""])
+    plotnow("dissipation", r"$t/t_e$", r"$\epsilon$",
+            [normalizedTime, normalizedTime, normalizedTime],
+            [eps,
+             np.full_like(t, np.mean(eps)),
+             np.full_like(t, targetDissipation)],
+            [r"$\epsilon$",
+             r"mean $= %.3f$" % np.mean(eps),
+             r"$\epsilon_\infty=%.3f$" % targetDissipation],
+            linestyles=["-", ":", "--"], markers=["", "", ""])
 
     print("Read %d records from %s" % (len(t), fname))
 
