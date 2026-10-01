@@ -10,3 +10,5 @@
 *.avi*
 *obj*
 *.state*
+*.dat*
+*SESSION.NAME*

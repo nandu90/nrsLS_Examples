@@ -37,6 +37,7 @@ distanceFactor = 10
 maximumSteps = 10000
 stoppingCondition = targetTime
 #boundaryFix = false
+#checkpointing = true
 
 [CLSR]
 solver = none

@@ -1,0 +1,11 @@
+-3                     spatial dimension
+3                      number of fields
+#
+# Unit-square periodic domain with one element through the homogeneous z direction.
+#
+Box
+-20 -20 -1             nelx,nely,nelz
+0.0 1.0 1.0            x0,x1,ratio
+0.0 1.0 1.0            y0,y1,ratio
+0.0 1.0 1.0            z0,z1,ratio
+P  ,P  ,P  ,P  ,P  ,P  boundary conditions

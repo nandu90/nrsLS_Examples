@@ -1,4 +1,5 @@
 #include "lvlSet.hpp"
+#include "pointInterpolation.hpp"
 
 #ifdef __okl__
 
@@ -9,6 +10,115 @@
 static dfloat Re, We, Fr;
 static dfloat rhoRatio, muRatio;
 
+namespace
+{
+constexpr int interfaceNpts = 1001;
+constexpr dfloat interfaceIsoValue = 0.5;
+constexpr dfloat interfaceOutputInterval = 0.01;
+
+pointInterpolation_t* interfaceInterpolator = nullptr;
+deviceMemory<dfloat> o_clsProbe;
+dfloat nextInterfaceOutputTime = 0.0;
+
+dfloat wallInterfaceLocation(const std::vector<dfloat>& cls,
+                             const int offset,
+                             const dfloat wallLength)
+{
+  const dfloat ds = wallLength / (interfaceNpts - 1);
+  dfloat interfaceLocation = -1.0;
+  bool anyWet = false;
+
+  for (int i = 0; i < interfaceNpts; ++i) {
+    anyWet = anyWet || cls[offset + i] >= interfaceIsoValue;
+  }
+
+  for (int i = 0; i < interfaceNpts - 1; ++i) {
+    const dfloat f0 = cls[offset + i] - interfaceIsoValue;
+    const dfloat f1 = cls[offset + i + 1] - interfaceIsoValue;
+
+    if (f0 * f1 <= 0.0 && std::abs(f1 - f0) > 1.0e-14) {
+      const dfloat alpha = -f0 / (f1 - f0);
+      interfaceLocation = std::max(interfaceLocation, (i + alpha) * ds);
+    }
+  }
+
+  // A completely wet line has no crossing inside the sampled interval.
+  if (interfaceLocation < 0.0 && anyWet) {
+    interfaceLocation = wallLength;
+  }
+
+  return interfaceLocation;
+}
+
+void setupInterfaceTracker()
+{
+  const int rank = platform->comm.mpiRank();
+  const int nLocalPoints = rank == 0 ? 2 * interfaceNpts : 0;
+
+  std::vector<dfloat> x(nLocalPoints);
+  std::vector<dfloat> y(nLocalPoints);
+  std::vector<dfloat> z(nLocalPoints, 0.5 * 0.03125);
+
+  if (rank == 0) {
+    for (int i = 0; i < interfaceNpts; ++i) {
+      const dfloat r = static_cast<dfloat>(i) / (interfaceNpts - 1);
+
+      // Bottom wall: (x, 0), ordered from the left corner to the outlet wall.
+      x[i] = 5.0 * r;
+      y[i] = 0.0;
+
+      // Left wall: (0, y), ordered from the bottom to the top wall.
+      x[interfaceNpts + i] = 0.0;
+      y[interfaceNpts + i] = 1.25 * r;
+    }
+
+    o_clsProbe.resize(2 * interfaceNpts);
+
+    const bool restarting = !platform->options.getArgs("RESTART FILE NAME").empty();
+    std::ofstream file("interface_location.dat", restarting ? std::ios::app : std::ios::trunc);
+    if (!restarting) {
+      file << "# time surge_front_x dam_height_y\n";
+    }
+  }
+
+  interfaceInterpolator = new pointInterpolation_t(nrs->meshV,
+                                                    platform->comm.mpiComm());
+  interfaceInterpolator->setPoints(x, y, z);
+  interfaceInterpolator->find(pointInterpolation_t::VerbosityLevel::Basic);
+}
+
+void writeInterfaceLocation(double time)
+{
+  const dfloat timeTolerance = 10 * std::numeric_limits<dfloat>::epsilon() * fmax(1.0, fabs(time));
+  if (time + timeTolerance < nextInterfaceOutputTime) {
+    return;
+  }
+
+  while (nextInterfaceOutputTime <= time + timeTolerance) {
+    nextInterfaceOutputTime += interfaceOutputInterval;
+  }
+
+  auto o_cls = nrs->scalar->o_solution("cls");
+  interfaceInterpolator->eval(1,
+                              nrs->scalar->fieldOffset(),
+                              o_cls,
+                              2 * interfaceNpts,
+                              o_clsProbe);
+
+  if (platform->comm.mpiRank() == 0) {
+    std::vector<dfloat> clsProbe(2 * interfaceNpts);
+    o_clsProbe.copyTo(clsProbe);
+
+    const dfloat surgeFront = wallInterfaceLocation(clsProbe, 0, 5.0);
+    const dfloat damHeight = wallInterfaceLocation(clsProbe, interfaceNpts, 1.25);
+
+    std::ofstream file("interface_location.dat", std::ios::app);
+    file << std::scientific << std::setprecision(12)
+         << time << " " << surgeFront << " " << damHeight << "\n";
+  }
+}
+} // namespace
+
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
@@ -18,12 +128,35 @@ void userf(double time)
 {
   auto mesh = nrs->meshV;
 
-  lvlSet::applySurfaceTensionAcc(We, nrs->fluid->o_EXT);
-
   platform->linAlg->add(mesh->Nlocal, 
                         -1.0 / Fr,
                         nrs->fluid->o_EXT,
                         1 * nrs->fluid->fieldOffset);
+}
+
+void preFluid(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+
+  auto o_stAcc = platform->deviceMemoryPool.reserve<dfloat>(nrs->fluid->fieldOffsetSum);
+  platform->linAlg->fill(nrs->fluid->fieldOffsetSum, 0.0, o_stAcc);
+
+  lvlSet::applySurfaceTensionAcc(We, o_stAcc);
+
+  platform->linAlg->axmyVector(mesh->Nlocal,
+                               nrs->fluid->fieldOffset,
+                               0,
+                               1.0,
+                               mesh->o_Jw,
+                               o_stAcc);
+
+  platform->linAlg->axpbyMany(mesh->Nlocal,
+                              mesh->dim,
+                              nrs->fluid->fieldOffset,
+                              1.0,
+                              o_stAcc,
+                              1.0,
+                              nrs->fluid->o_JwF);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -37,6 +170,7 @@ void UDF_Setup()
 {
   nrs->userProperties = &uservp;
   nrs->userSource = &userf;
+  nrs->preFluid = &preFluid;
 
   auto mesh = nrs->meshV;
 
@@ -49,6 +183,8 @@ void UDF_Setup()
     tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
     lvlSet::initHeaviside(o_tls, o_cls);
   }
+
+  setupInterfaceTracker();
 
   //Dimensionless params
   const dfloat lenScale = 0.05715;
@@ -79,4 +215,5 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Viscosity Ratio: %.8e\n", muRatio);
   }
   lvlSet::solve(time);
+  writeInterfaceLocation(time);
 }

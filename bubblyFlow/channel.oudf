@@ -43,6 +43,35 @@
   }
 }
 
+@kernel void updateThermalProperties(const dlong N,
+                                     const dfloat conductivityLiquid,
+                                     const dfloat conductivityGas,
+                                     const dfloat rhoCpLiquid,
+                                     const dfloat rhoCpGas,
+                                     @ restrict const dfloat *CLS,
+                                     @ restrict dfloat *CONDUCTIVITY,
+                                     @ restrict dfloat *RHOCP)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat liquid = fmax(0.0, fmin(1.0, CLS[n]));
+    CONDUCTIVITY[n] = liquid*conductivityLiquid
+                    + (1.0 - liquid)*conductivityGas;
+    RHOCP[n] = liquid*rhoCpLiquid + (1.0 - liquid)*rhoCpGas;
+  }
+}
+
+@kernel void periodicHeatSource(const dlong N,
+                                const dlong offset,
+                                const dfloat meanTemperatureGradient,
+                                @ restrict const dfloat *U,
+                                @ restrict const dfloat *RHOCP,
+                                @ restrict dfloat *SOURCE)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    SOURCE[n] = -RHOCP[n]*meanTemperatureGradient*U[n + 0*offset];
+  }
+}
+
 void udfDirichlet(bcData *bc)
 {
   if(isField("scalar cls") || isField("clsr")) {
@@ -53,6 +82,8 @@ void udfDirichlet(bcData *bc)
 void udfNeumann(bcData *bc)
 {
   if(isField("scalar temperature")) {
+    // Inward unit heat flux at both channel walls. NekRS expects the
+    // conductive flux here (k*dT/dn), not an unscaled temperature gradient.
     bc->fluxScalar = 1.0;
   }
 }

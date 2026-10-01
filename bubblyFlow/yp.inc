@@ -24,8 +24,19 @@ static deviceMemory<dfloat> o_yp;
 static std::unique_ptr<iofld> ypWriter;
 static int outfldCounter = 0;
 
-void y_p(double time, const bool iffld = false);
-void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::memory &o_ywd, const bool iffld = false);
+struct WallStatistics
+{
+  dfloat yPlusMin;
+  dfloat yPlusMax;
+  dfloat yPlusAverage;
+  dfloat frictionVelocityMin;
+  dfloat frictionVelocityMax;
+  dfloat frictionVelocityAverage;
+  dfloat wallArea;
+};
+
+WallStatistics y_p(double time, const bool iffld = false);
+WallStatistics y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::memory &o_ywd, const bool iffld = false);
 
 dfloat reduce_sum(const std::vector<dfloat> tmp, const dlong N)
 {
@@ -66,7 +77,7 @@ dfloat reduce_max(const std::vector<dfloat> tmp, const dlong N)
   return smax;
 }
 
-void y_p(double time, const bool iffld)
+WallStatistics y_p(double time, const bool iffld)
 {
   auto mesh = nrs->meshV;
   
@@ -82,10 +93,10 @@ void y_p(double time, const bool iffld)
   auto o_wbID = platform->device.malloc<int>(wbID.size(), wbID.data());
   auto o_ywd = mesh->minDistance(wbID.size(), o_wbID, "cheap_dist");
 
-  y_p(time, wbID.size(), o_wbID, o_ywd, iffld);
+  return y_p(time, wbID.size(), o_wbID, o_ywd, iffld);
 }
 
-void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::memory &o_ywd, const bool iffld)
+WallStatistics y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::memory &o_ywd, const bool iffld)
 {
   auto mesh = nrs->meshV;
   
@@ -172,4 +183,12 @@ void y_p(double time, const int &nbID, const occa::memory &o_bID, const occa::me
     ypWriter->process();
     outfldCounter++;
   }
+
+  return {mind,
+          maxd,
+          sumd/areaWall,
+          minut,
+          maxut,
+          sumut/areaWall,
+          areaWall};
 }

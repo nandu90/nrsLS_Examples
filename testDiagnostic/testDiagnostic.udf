@@ -1,0 +1,82 @@
+#include "plugins/lvlSet.hpp"
+#include "../lvlSetDiagnostics.inc"
+
+#ifdef __okl__
+
+#include "../lvlSetDiagnostics.oudf"
+#include "testDiagnostic.oudf"
+
+#endif
+
+static constexpr dfloat xc = 0.35;
+static constexpr dfloat yc = 0.50;
+static constexpr dfloat r = 0.20;
+static constexpr dfloat ux = 0.20;
+static constexpr dfloat uy = 0.10;
+
+#include "ci.inc"
+
+void UDF_Setup0(MPI_Comm comm, setupAide& options)
+{
+  options.getArgs("CI-MODE", ciMode);
+  if (ciMode) {
+    ciSetup(comm, options);
+  }
+}
+
+void UDF_Setup()
+{
+  auto mesh = nrs->meshV;
+  lvlSet::setup();
+
+  if (platform->options.getArgs("RESTART FILE NAME").empty()) {
+    auto o_tls = nrs->scalar->o_solution("tls");
+    auto o_cls = nrs->scalar->o_solution("cls");
+    initializeDiagnosticCircle(mesh->Nlocal,
+                               xc,
+                               yc,
+                               r,
+                               mesh->o_x,
+                               mesh->o_y,
+                               o_tls);
+    lvlSet::initHeaviside(o_tls, o_cls);
+  }
+
+  setDiagnosticVelocity(mesh->Nlocal,
+                        nrs->fluid->fieldOffset,
+                        ux,
+                        uy,
+                        nrs->fluid->o_U);
+  setDiagnosticVelocity(mesh->Nlocal,
+                        nrs->scalar->vFieldOffset,
+                        ux,
+                        uy,
+                        nrs->scalar->o_U);
+  platform->linAlg->fill(mesh->Nlocal, 3.0, nrs->fluid->o_P);
+
+  if (ciMode) {
+    ciInitialize();
+  }
+}
+
+void UDF_ExecuteStep(double time, int tstep)
+{
+  auto mesh = nrs->meshV;
+  setDiagnosticVelocity(mesh->Nlocal,
+                        nrs->fluid->fieldOffset,
+                        ux,
+                        uy,
+                        nrs->fluid->o_U);
+  setDiagnosticVelocity(mesh->Nlocal,
+                        nrs->scalar->vFieldOffset,
+                        ux,
+                        uy,
+                        nrs->scalar->o_U);
+  platform->linAlg->fill(mesh->Nlocal, 3.0, nrs->fluid->o_P);
+
+  lvlSet::solve(time);
+
+  if (ciMode && nrs->lastStep) {
+    ciTestDiagnostics(time);
+  }
+}

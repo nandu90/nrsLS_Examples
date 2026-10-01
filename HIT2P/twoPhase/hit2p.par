@@ -1,0 +1,51 @@
+userSections = tlsr, clsr, lvlset
+
+[GENERAL]
+polynomialOrder = 7
+startFrom = "hit2p.fld"
+stopAt = endTime
+endTime = 15.0
+dt = 1e-4 #targetCFL=0.4+max=2.0e-3
+timeStepper = tombo2
+
+checkpointControl = simulationTime
+checkPointInterval = 0.1
+
+scalars = tls, cls
+
+[PROBLEMTYPE]
+equation = navierStokes+variableViscosity
+
+[FLUID VELOCITY]
+boundaryTypeMap = none
+#regularization = svv+scalingCoeff=1.0+filterPower=4.0
+residualTol = 1e-7
+
+[FLUID PRESSURE]
+residualTol = 1e-5
+
+[SCALAR TLS]
+boundaryTypeMap = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-10
+residualTol = 1e-9
+regularization = svv+scalingCoeff=0.1+filterPower=2.0
+
+[SCALAR CLS]
+boundaryTypeMap = none
+transportCoeff = 1.0
+diffusionCoeff = 1e-10
+residualTol = 1e-9
+regularization = svv+scalingCoeff=0.1+filterPower=2.0
+
+[TLSR]
+solveFrequency = 1e-2
+residualTol = 1e-9
+
+[CLSR]
+solveFrequency = 1e-3
+residualTol = 1e-9
+
+[LVLSET]
+interfaceWidthFactor = 1.5
+enclosedFieldFixTol = 0.02

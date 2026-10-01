@@ -9,7 +9,7 @@
 
 void userq(double time)
 {
-  if (ciMode != 1) {
+  if (ciMode == 2) {
     return;
   }
 
@@ -65,8 +65,8 @@ void UDF_Setup()
     auto o_cls = nrs->scalar->o_solution("cls");
 
     // Initialize with a perturbation of the signed-distance field for the union of two overlapping discs
-    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_tls);
-    udfic(mesh->Nlocal, mesh->o_x, mesh->o_y, o_cls);
+    udfic(mesh->Nlocal, 0, mesh->o_x, mesh->o_y, o_tls);
+    udfic(mesh->Nlocal, 1, mesh->o_x, mesh->o_y, o_cls);
 
     if (ciMode == 2) {
       // TLSR solver expects an unshifted CLS field in [0,1]; internally it subtracts 0.5 to center the interface.
@@ -85,8 +85,13 @@ void UDF_ExecuteStep(double time, int tstep)
     lvlSet::solve(time);
   }
 
-  if (ciMode == 2 || nrs->lastStep) { 
-    auto o_phi = ciMode == 1 ? nrs->scalar->o_solution("tls") : lvlSet::getTLSR()->o_S;
-    ciTestErrors(time, tstep, o_phi); 
+  if (ciMode == 1 && nrs->lastStep) {
+    auto o_phi = nrs->scalar->o_solution("tls");
+    ciTestErrors(time, tstep, o_phi);
+  }
+
+  if (ciMode == 2) {
+    auto o_phi = lvlSet::getTLSR()->o_S;
+    ciTestErrors(time, tstep, o_phi);
   }
 }
