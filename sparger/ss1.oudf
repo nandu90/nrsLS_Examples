@@ -1,0 +1,104 @@
+void udfDirichlet(bcData *bc)
+{
+  if (isField("fluid velocity")) {
+    bc->uxFluid = 0.0;
+    bc->uyFluid = 0.0;
+    bc->uzFluid = -0.21/0.0531;  // to confirm inlet velocities.
+  } else if (isField("fluid pressure")) {
+    const dfloat iU0delta = 20.0;
+    const dfloat un = bc->uxFluid * bc->nx + bc->uyFluid * bc->ny + bc->uzFluid * bc->nz;
+    const dfloat s0 = 0.5 * (1.0 - tanh(un * iU0delta));
+    bc->pFluid = -0.5 * (bc->uxFluid * bc->uxFluid + bc->uyFluid * bc->uyFluid + bc->uzFluid * bc->uzFluid) * s0;
+  } else if (isField("scalar cls") || isField("clsr")) {
+    if(bc->id == 1) {
+      bc->sScalar = 1.0;
+    } else if(bc->id == 3 || bc->id == 6) {
+      bc->sScalar = 0.0;
+    }
+  }
+}
+
+@kernel void tlsic(const dlong N,
+                   @ restrict const dfloat *X,
+                   @ restrict const dfloat *Y,
+                   @ restrict const dfloat *Z,
+                   @ restrict dfloat *S)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat x = X[n];
+    const dfloat y = Y[n];
+    const dfloat z = Z[n];
+
+    // S[n] < 0 for gas, = 0 at the interface, > 0 for liquid.
+    const dfloat zFree = -0.07454340/0.00775;
+
+    // Geometry extracted from ss1.exo. The two tube bores share the same
+    // y-coordinate and radius, and discharge at the same z-coordinate.
+    const dfloat tubeX1 = -0.0015875/0.00775;
+    const dfloat tubeX2 =  0.0015875/0.00775;
+    const dfloat tubeY = -0.00944710596509825/0.00775;
+    const dfloat tubeRadius = 0.00079375/0.00775;
+    const dfloat zDischarge = -0.0832434/0.00775;
+    const dfloat innerRadius = 0.003175/0.00775;
+    const dfloat outerRadius = 0.0102112534/0.00775;
+    const dfloat geometryTolerance = 1.0e-4;
+
+    const dfloat dx1 = x - tubeX1;
+    const dfloat dx2 = x - tubeX2;
+    const dfloat dy = y - tubeY;
+    const dfloat rTube1Sq = dx1*dx1 + dy*dy;
+    const dfloat rTube2Sq = dx2*dx2 + dy*dy;
+    const dfloat rTube1 = sqrt(rTube1Sq);
+    const dfloat rTube2 = sqrt(rTube2Sq);
+    const dfloat rShell = sqrt(x*x + dy*dy);
+
+    // Boundary nodes projected onto an exact cylinder can fall infinitesimally
+    // to either side of its nominal radius because of floating-point roundoff.
+    // Use a small tolerance for region classification only; the distances
+    // themselves continue to use the exact geometric radii.
+    const bool insideTube1 =
+        rTube1 <= tubeRadius + geometryTolerance;
+    const bool insideTube2 =
+        rTube2 <= tubeRadius + geometryTolerance;
+
+    // In either tube bore above its discharge, the closest interface is the
+    // flat circular discharge surface directly below the point.
+    if ((z >= zDischarge) && (insideTube1 || insideTube2)) {
+      S[n] = zDischarge - z;
+    } else {
+      // Exact unsigned distance to each finite circular discharge surface.
+      // Inside a disk's projected radius this reduces to vertical distance;
+      // outside it includes the radial distance to the circular rim.
+      const dfloat dzDischarge = z - zDischarge;
+      const dfloat drTube1 = fmax(rTube1 - tubeRadius, 0.0);
+      const dfloat drTube2 = fmax(rTube2 - tubeRadius, 0.0);
+      const dfloat dDisk1 =
+          sqrt(dzDischarge*dzDischarge + drTube1*drTube1);
+      const dfloat dDisk2 =
+          sqrt(dzDischarge*dzDischarge + drTube2*drTube2);
+
+      // Exact unsigned distance to the finite annular free surface. In the
+      // outer annulus this is vertical distance; inside or outside the annulus
+      // it includes distance to the nearest annular rim.
+      const dfloat dzFree = z - zFree;
+      const dfloat drFreeInner = fmax(innerRadius - rShell, 0.0);
+      const dfloat drFreeOuter = fmax(rShell - outerRadius, 0.0);
+      const dfloat drFree = drFreeInner + drFreeOuter;
+      const dfloat dFree = sqrt(dzFree*dzFree + drFree*drFree);
+
+      // The connected outer/lower vessel takes distance to its nearest
+      // gas/liquid interface. A minimum of continuous distance functions is
+      // continuous, including across z = zDischarge.
+      dfloat distance = fmin(dFree, fmin(dDisk1, dDisk2));
+
+      // Only the outer annulus above the free surface is gas in this section.
+      const bool inOuterAnnulus =
+          (rShell >= innerRadius - geometryTolerance) &&
+          (rShell <= outerRadius + geometryTolerance);
+      if (inOuterAnnulus && (z > zFree)) {
+        distance = -distance;
+      }
+      S[n] = distance;
+    }
+  }
+}

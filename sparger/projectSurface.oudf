@@ -1,0 +1,50 @@
+@kernel void projectSurface(const dlong Nelements,
+                            const dlong bID,
+                            const dfloat axisX,
+                            const dfloat axisY,
+                            const dfloat axisZ,
+                            const dfloat centerX,
+                            const dfloat centerY,
+                            const dfloat centerZ,
+                            const dfloat targetRadius,
+                            const dfloat tolerance,
+                            @ restrict const dlong *vmapM,
+                            @ restrict const int *EToBM,
+                            @ restrict dfloat *X,
+                            @ restrict dfloat *Y,
+                            @ restrict dfloat *Z)
+{
+  for (dlong e = 0; e < Nelements; ++e; @outer(0)) {
+    for (int t = 0; t < p_Nfp; ++t; @inner(0)) {
+      for (int f = 0; f < p_Nfaces; ++f) {
+        const dlong boundaryID = EToBM[f + p_Nfaces*e];
+
+        if (boundaryID == bID) {
+          const dlong sid = e*p_Nfaces*p_Nfp + f*p_Nfp + t;
+          const dlong id = vmapM[sid];
+
+          const dfloat px = X[id] - centerX;
+          const dfloat py = Y[id] - centerY;
+          const dfloat pz = Z[id] - centerZ;
+
+          const dfloat axialDistance = px*axisX + py*axisY + pz*axisZ;
+          const dfloat radialX = px - axialDistance*axisX;
+          const dfloat radialY = py - axialDistance*axisY;
+          const dfloat radialZ = pz - axialDistance*axisZ;
+          const dfloat currentRadius = sqrt(radialX*radialX + radialY*radialY + radialZ*radialZ);
+
+          if ((fabs(currentRadius - targetRadius) <= tolerance) && (currentRadius > 1.0e-14)) {
+            const dfloat scale = targetRadius/currentRadius;
+
+            // Preserve axial position and azimuth; modify radius only.
+            X[id] = centerX + axialDistance*axisX + scale*radialX;
+            Y[id] = centerY + axialDistance*axisY + scale*radialY;
+            Z[id] = centerZ + axialDistance*axisZ + scale*radialZ;
+          }
+        }
+      }
+    }
+    @barrier;
+  }
+}
+

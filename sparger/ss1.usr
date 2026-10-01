@@ -1,0 +1,40 @@
+      subroutine usrdat3
+      include "SIZE"
+      include "TOTAL"
+
+      integer ie, ifc, id,id_face,ntot
+      character*3 cb3
+
+      real scale
+	  
+      ntot = nx1*ny1*nz1*nelt
+
+      scale = 1.0/0.00775
+
+      call cmult(xm1,scale,ntot)
+      call cmult(ym1,scale,ntot)
+      call cmult(zm1,scale,ntot)
+
+      do ie=1,nelt
+        do ifc=1,2*ndim
+          id_face = bc(5,ifc,ie,1)
+          if (id_face.eq.2) then
+            boundaryID(ifc,ie) = 1   !VESSEL_BOT
+          elseif(id_face.eq.3) then
+            boundaryID(ifc,ie) = 2   !VESSEL_SIDE
+          elseif(id_face.eq.4) then
+            boundaryID(ifc,ie) = 3   !VESSEL_TOP (GAS OUTLET)
+          elseif(id_face.eq.5) then
+            boundaryID(ifc,ie) = 4   !BORING_BOT  ()
+          elseif(id_face.eq.6) then
+            boundaryID(ifc,ie) = 5   !BORING_WALL
+          elseif(id_face.eq.7) then
+            boundaryID(ifc,ie) = 6   !GAS_TUBE_TOP (GAS INLET)
+          elseif(id_face.eq.8) then
+            boundaryID(ifc,ie) = 7   !GAS_TUBE_WALL
+          endif
+        enddo
+      enddo
+
+      return
+      end
