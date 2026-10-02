@@ -51,6 +51,7 @@ residualTol = 1e-8
 [CLSR]
 solveFrequency = 1e-2
 residualTol = 1e-8
+maximumSteps = 100
 
 [LVLSET]
 interfaceWidthFactor = 1.7
