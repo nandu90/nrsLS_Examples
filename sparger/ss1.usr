@@ -9,7 +9,9 @@
 	  
       ntot = nx1*ny1*nz1*nelt
 
-      scale = 1.0/0.00775
+      ! Reference length is the dimensional tube diameter (1.5875 mm),
+      ! making the nondimensional tube diameter exactly one.
+      scale = 1.0/0.0015875
 
       call cmult(xm1,scale,ntot)
       call cmult(ym1,scale,ntot)

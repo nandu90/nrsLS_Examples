@@ -65,13 +65,16 @@ void UDF_Setup()
 
   auto mesh = nrs->meshV;
 
-  const dfloat tolerance = 5e-3;
-  const dfloat shellCenterY = -1.21898141485;
-  const dfloat outerShellRadius = 1.31758108387;
-  const dfloat innerShellRadius = 0.409677419355;
-  const dfloat tubeRadius = 0.102419354839;
-  const dfloat tube1CenterX = -0.204838709677;
-  const dfloat tube2CenterX =  0.204838709677;
+  lenScale = 0.0015875;
+  velScale = 0.21;
+
+  const dfloat tolerance = 0.025;
+  const dfloat shellCenterY = -0.00944710596509825/lenScale;
+  const dfloat outerShellRadius = 0.0102112534/lenScale;
+  const dfloat innerShellRadius = 0.003175/lenScale;
+  const dfloat tubeRadius = 0.00079375/lenScale;
+  const dfloat tube1CenterX = -0.0015875/lenScale;
+  const dfloat tube2CenterX =  0.0015875/lenScale;
 
   projectSurfaceToCylinder(2,
                            0.0, 0.0, 1.0,
@@ -104,8 +107,6 @@ void UDF_Setup()
   }
 
   //Dimensionless params
-  const dfloat lenScale = 0.00775;
-  const dfloat velScale = 0.0531;
   const dfloat gdim = 9.81;
   const dfloat rhol = 1627.0;
   const dfloat rhog = 0.622;

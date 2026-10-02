@@ -3,7 +3,9 @@ void udfDirichlet(bcData *bc)
   if (isField("fluid velocity")) {
     bc->uxFluid = 0.0;
     bc->uyFluid = 0.0;
-    bc->uzFluid = -0.21/0.0531;  // to confirm inlet velocities.
+    // Uref is the dimensional inlet speed, so the nondimensional inlet
+    // velocity is unity in magnitude and points in the -z direction.
+    bc->uzFluid = -1.0;
   } else if (isField("fluid pressure")) {
     const dfloat iU0delta = 20.0;
     const dfloat un = bc->uxFluid * bc->nx + bc->uyFluid * bc->ny + bc->uzFluid * bc->nz;
@@ -30,18 +32,20 @@ void udfDirichlet(bcData *bc)
     const dfloat z = Z[n];
 
     // S[n] < 0 for gas, = 0 at the interface, > 0 for liquid.
-    const dfloat zFree = -0.07454340/0.00775;
+    // Reference length: dimensional tube diameter, so D_tube = 1.
+    const dfloat lengthScale = 0.0015875;
+    const dfloat zFree = -0.07454340/lengthScale;
 
     // Geometry extracted from ss1.exo. The two tube bores share the same
     // y-coordinate and radius, and discharge at the same z-coordinate.
-    const dfloat tubeX1 = -0.0015875/0.00775;
-    const dfloat tubeX2 =  0.0015875/0.00775;
-    const dfloat tubeY = -0.00944710596509825/0.00775;
-    const dfloat tubeRadius = 0.00079375/0.00775;
-    const dfloat zDischarge = -0.0832434/0.00775;
-    const dfloat innerRadius = 0.003175/0.00775;
-    const dfloat outerRadius = 0.0102112534/0.00775;
-    const dfloat geometryTolerance = 1.0e-4;
+    const dfloat tubeX1 = -0.0015875/lengthScale;
+    const dfloat tubeX2 =  0.0015875/lengthScale;
+    const dfloat tubeY = -0.00944710596509825/lengthScale;
+    const dfloat tubeRadius = 0.00079375/lengthScale;
+    const dfloat zDischarge = -0.0832434/lengthScale;
+    const dfloat innerRadius = 0.003175/lengthScale;
+    const dfloat outerRadius = 0.0102112534/lengthScale;
+    const dfloat geometryTolerance = 5.0e-4;
 
     const dfloat dx1 = x - tubeX1;
     const dfloat dx2 = x - tubeX2;
