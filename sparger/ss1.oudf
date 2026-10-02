@@ -20,6 +20,41 @@ void udfDirichlet(bcData *bc)
   }
 }
 
+@kernel void clusterTubeDischarge(const dlong N,
+                                  const dfloat tubeX1,
+                                  const dfloat tubeX2,
+                                  const dfloat tubeY,
+                                  const dfloat tubeRadius,
+                                  const dfloat zDischarge,
+                                  const dfloat zInlet,
+                                  const dfloat beta,
+                                  const dfloat radialTolerance,
+                                  @ restrict const dfloat *X,
+                                  @ restrict const dfloat *Y,
+                                  @ restrict dfloat *Z)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat dx1 = X[n] - tubeX1;
+    const dfloat dx2 = X[n] - tubeX2;
+    const dfloat dy = Y[n] - tubeY;
+    const dfloat selectionRadius = tubeRadius + radialTolerance;
+    const bool inTube1 = dx1*dx1 + dy*dy <= selectionRadius*selectionRadius;
+    const bool inTube2 = dx2*dx2 + dy*dy <= selectionRadius*selectionRadius;
+    const dfloat z = Z[n];
+
+    if ((inTube1 || inTube2) && (z >= zDischarge) && (z <= zInlet)) {
+      const dfloat tubeLength = zInlet - zDischarge;
+      const dfloat s = (z - zDischarge)/tubeLength;
+
+      // Preserve both tube ends and smoothly cluster axial points toward
+      // s=0, the discharge. beta=1.5 gives about 3.3x finer spacing there.
+      const dfloat sMapped =
+          1.0 - tanh(beta*(1.0 - s))/tanh(beta);
+      Z[n] = zDischarge + tubeLength*sMapped;
+    }
+  }
+}
+
 @kernel void tlsic(const dlong N,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,

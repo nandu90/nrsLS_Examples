@@ -75,6 +75,8 @@ void UDF_Setup()
   const dfloat tubeRadius = 0.00079375/lenScale;
   const dfloat tube1CenterX = -0.0015875/lenScale;
   const dfloat tube2CenterX =  0.0015875/lenScale;
+  const dfloat zDischarge = -0.0832434/lenScale;
+  const dfloat zInlet = -0.0680034/lenScale;
 
   projectSurfaceToCylinder(2,
                            0.0, 0.0, 1.0,
@@ -94,7 +96,26 @@ void UDF_Setup()
   projectSurfaceToCylinder(7,
                            0.0, 0.0, 1.0,
                            tube2CenterX, shellCenterY, 0.0,
-                           tubeRadius, tolerance); //tube 2
+                           tubeRadius, tolerance, false); //tube 2
+
+  // Redistribute only the tube-bore points in z after all cylindrical
+  // boundary projections. Both tube end planes remain fixed. Recompute the
+  // mesh geometric factors once after all coordinate modifications.
+  const dfloat clusteringBeta = 2.0;
+  const dfloat radialSelectionTolerance = 1.0e-5;
+  clusterTubeDischarge(mesh->Nlocal,
+                       tube1CenterX,
+                       tube2CenterX,
+                       shellCenterY,
+                       tubeRadius,
+                       zDischarge,
+                       zInlet,
+                       clusteringBeta,
+                       radialSelectionTolerance,
+                       mesh->o_x,
+                       mesh->o_y,
+                       mesh->o_z);
+  mesh->update();
                                                          
   lvlSet::setup();
 
@@ -114,7 +135,7 @@ void UDF_Setup()
   const dfloat mug = 4.64e-5;
   const dfloat sigma = 0.1;
 
-  rhoRatio = rhol/rhog;  //must be heavier / lighter
+  rhoRatio = rhol/rhog * 0.1;  //must be heavier / lighter
   muRatio = mul/mug;  //must be heavier / lighter
 
   Re = rhol * velScale * lenScale / mul;
