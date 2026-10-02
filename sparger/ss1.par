@@ -8,7 +8,7 @@ endTime = 10
 #stopAt = numSteps
 #numSteps = 1
 
-dt = initial=1e-06+targetCFL=0.2+max=1e-4
+dt = initial=1e-06+targetCFL=0.1+max=1e-4
 
 timeStepper = tombo2
 
@@ -27,7 +27,7 @@ boundaryTypeMap = zeroDirichlet, zeroDirichlet, outlet, zeroDirichlet, zeroDiric
 residualTol = 1e-6
 
 [FLUID PRESSURE]
-residualTol = 1e-4
+residualTol = 1e-6
 
 [SCALAR TLS]
 boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann
@@ -51,6 +51,7 @@ residualTol = 1e-8
 [CLSR]
 solveFrequency = 1e-3
 residualTol = 1e-8
+maximumSteps = 100
 
 [LVLSET]
 interfaceWidthFactor = 2.0
