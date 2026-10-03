@@ -68,15 +68,14 @@ void UDF_Setup()
   lenScale = 0.0015875;
   velScale = 0.21;
 
+  // The generated mesh is already nondimensional and centered at (0,0).
   const dfloat tolerance = 0.025;
-  const dfloat shellCenterY = -0.00944710596509825/lenScale;
-  const dfloat outerShellRadius = 0.0102112534/lenScale;
-  const dfloat innerShellRadius = 0.003175/lenScale;
-  const dfloat tubeRadius = 0.00079375/lenScale;
-  const dfloat tube1CenterX = -0.0015875/lenScale;
-  const dfloat tube2CenterX =  0.0015875/lenScale;
-  const dfloat zDischarge = -0.0832434/lenScale;
-  const dfloat zInlet = -0.0680034/lenScale;
+  const dfloat shellCenterY = 0.0;
+  const dfloat outerShellRadius = 6.43228560629921;
+  const dfloat innerShellRadius = 2.0;
+  const dfloat tubeRadius = 0.5;
+  const dfloat tube1CenterX = -1.0;
+  const dfloat tube2CenterX =  1.0;
 
   projectSurfaceToCylinder(2,
                            0.0, 0.0, 1.0,
@@ -98,23 +97,7 @@ void UDF_Setup()
                            tube2CenterX, shellCenterY, 0.0,
                            tubeRadius, tolerance, false); //tube 2
 
-  // Redistribute only the tube-bore points in z after all cylindrical
-  // boundary projections. Both tube end planes remain fixed. Recompute the
-  // mesh geometric factors once after all coordinate modifications.
-  const dfloat clusteringBeta = 2.0;
-  const dfloat radialSelectionTolerance = 1.0e-5;
-  clusterTubeDischarge(mesh->Nlocal,
-                       tube1CenterX,
-                       tube2CenterX,
-                       shellCenterY,
-                       tubeRadius,
-                       zDischarge,
-                       zInlet,
-                       clusteringBeta,
-                       radialSelectionTolerance,
-                       mesh->o_x,
-                       mesh->o_y,
-                       mesh->o_z);
+  // All coordinate changes are complete; update geometric factors once.
   mesh->update();
                                                          
   lvlSet::setup();

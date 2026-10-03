@@ -20,41 +20,6 @@ void udfDirichlet(bcData *bc)
   }
 }
 
-@kernel void clusterTubeDischarge(const dlong N,
-                                  const dfloat tubeX1,
-                                  const dfloat tubeX2,
-                                  const dfloat tubeY,
-                                  const dfloat tubeRadius,
-                                  const dfloat zDischarge,
-                                  const dfloat zInlet,
-                                  const dfloat beta,
-                                  const dfloat radialTolerance,
-                                  @ restrict const dfloat *X,
-                                  @ restrict const dfloat *Y,
-                                  @ restrict dfloat *Z)
-{
-  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
-    const dfloat dx1 = X[n] - tubeX1;
-    const dfloat dx2 = X[n] - tubeX2;
-    const dfloat dy = Y[n] - tubeY;
-    const dfloat selectionRadius = tubeRadius + radialTolerance;
-    const bool inTube1 = dx1*dx1 + dy*dy <= selectionRadius*selectionRadius;
-    const bool inTube2 = dx2*dx2 + dy*dy <= selectionRadius*selectionRadius;
-    const dfloat z = Z[n];
-
-    if ((inTube1 || inTube2) && (z >= zDischarge) && (z <= zInlet)) {
-      const dfloat tubeLength = zInlet - zDischarge;
-      const dfloat s = (z - zDischarge)/tubeLength;
-
-      // Preserve both tube ends and smoothly cluster axial points toward
-      // s=0, the discharge. beta=1.5 gives about 3.3x finer spacing there.
-      const dfloat sMapped =
-          1.0 - tanh(beta*(1.0 - s))/tanh(beta);
-      Z[n] = zDischarge + tubeLength*sMapped;
-    }
-  }
-}
-
 @kernel void tlsic(const dlong N,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
@@ -67,19 +32,17 @@ void udfDirichlet(bcData *bc)
     const dfloat z = Z[n];
 
     // S[n] < 0 for gas, = 0 at the interface, > 0 for liquid.
-    // Reference length: dimensional tube diameter, so D_tube = 1.
-    const dfloat lengthScale = 0.0015875;
-    const dfloat zFree = -0.07454340/lengthScale;
+    // The generated mesh uses the tube diameter as reference length.
+    const dfloat zFree = -46.9564724409449;
 
-    // Geometry extracted from ss1.exo. The two tube bores share the same
-    // y-coordinate and radius, and discharge at the same z-coordinate.
-    const dfloat tubeX1 = -0.0015875/lengthScale;
-    const dfloat tubeX2 =  0.0015875/lengthScale;
-    const dfloat tubeY = -0.00944710596509825/lengthScale;
-    const dfloat tubeRadius = 0.00079375/lengthScale;
-    const dfloat zDischarge = -0.0832434/lengthScale;
-    const dfloat innerRadius = 0.003175/lengthScale;
-    const dfloat outerRadius = 0.0102112534/lengthScale;
+    // Geometry used by generate_discharge_section.py.
+    const dfloat tubeX1 = -1.0;
+    const dfloat tubeX2 =  1.0;
+    const dfloat tubeY = 0.0;
+    const dfloat tubeRadius = 0.5;
+    const dfloat zDischarge = -52.4367874015748;
+    const dfloat innerRadius = 2.0;
+    const dfloat outerRadius = 6.43228560629921;
     const dfloat geometryTolerance = 5.0e-4;
 
     const dfloat dx1 = x - tubeX1;
