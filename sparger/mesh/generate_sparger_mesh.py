@@ -24,14 +24,19 @@ from generate_discharge_section import (
 
 # Axial dimensions, nondimensionalized by the 1.5875 mm tube diameter.
 Z_BOTTOM = -0.0932434 / 0.0015875
-Z_TOP = -0.0680034 / 0.0015875
+Z_VESSEL_TOP = -0.0680034 / 0.0015875
+TUBE_LENGTH_FACTOR = 0.5
+Z_TUBE_INLET = Z_SECTION + TUBE_LENGTH_FACTOR * (Z_VESSEL_TOP - Z_SECTION)
 
-# Approximately 0.2 tube diameters per axial macro element.  Every block uses
+# Approximately 0.05 tube diameters per axial macro element. Every block uses
 # the same discharge-plane section, so all three upward blocks remain conformal
 # to the complete cylinder extruded downward.
-TARGET_AXIAL_SPACING = 0.2
+TARGET_AXIAL_SPACING = 0.05
 N_LOWER_LAYERS = math.ceil((Z_SECTION - Z_BOTTOM) / TARGET_AXIAL_SPACING)
-N_UPPER_LAYERS = math.ceil((Z_TOP - Z_SECTION) / TARGET_AXIAL_SPACING)
+N_OUTER_UPPER_LAYERS = math.ceil(
+    (Z_VESSEL_TOP - Z_SECTION) / TARGET_AXIAL_SPACING
+)
+N_TUBE_LAYERS = math.ceil((Z_TUBE_INLET - Z_SECTION) / TARGET_AXIAL_SPACING)
 
 HERE = Path(__file__).resolve().parent
 RE2_OUTPUT = HERE / "sparger.re2"
@@ -137,8 +142,8 @@ def build_mesh() -> hexmesh.HexMesh:
     )
     upper_outer = hexmesh.extrude(
         outer_section,
-        length=Z_TOP - Z_SECTION,
-        layers=N_UPPER_LAYERS,
+        length=Z_VESSEL_TOP - Z_SECTION,
+        layers=N_OUTER_UPPER_LAYERS,
         axis=(0.0, 0.0, 1.0),
         element_tags=outer_section.element_tags,
         first_tag="join_outer",
@@ -155,8 +160,8 @@ def build_mesh() -> hexmesh.HexMesh:
         tube_blocks.append(
             hexmesh.extrude(
                 tube_section,
-                length=Z_TOP - Z_SECTION,
-                layers=N_UPPER_LAYERS,
+                length=Z_TUBE_INLET - Z_SECTION,
+                layers=N_TUBE_LAYERS,
                 axis=(0.0, 0.0, 1.0),
                 element_tags=tube_section.element_tags,
                 first_tag=f"join_tube_{index}",
@@ -185,9 +190,12 @@ def main() -> None:
 
     print(f"wrote: {RE2_OUTPUT}")
     print(f"wrote: {VTU_OUTPUT}")
-    print(f"z range: {Z_BOTTOM:.12g} to {Z_TOP:.12g}")
+    print(f"vessel z range: {Z_BOTTOM:.12g} to {Z_VESSEL_TOP:.12g}")
+    print(f"tube z range: {Z_SECTION:.12g} to {Z_TUBE_INLET:.12g}")
+    print(f"target axial spacing: {TARGET_AXIAL_SPACING:.12g}")
     print(f"lower axial layers: {N_LOWER_LAYERS}")
-    print(f"upper axial layers: {N_UPPER_LAYERS}")
+    print(f"upper-annulus axial layers: {N_OUTER_UPPER_LAYERS}")
+    print(f"tube axial layers: {N_TUBE_LAYERS}")
     print(f"points: {mesh.n_points}")
     print(f"hexahedra: {mesh.n_hexes}")
     print(f"boundary groups: {sorted(mesh.face_group_tags)}")
