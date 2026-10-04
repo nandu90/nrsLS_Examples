@@ -145,4 +145,16 @@ void UDF_ExecuteStep(double time, int tstep)
                         freeSurfaceZ + clearThreshold,
                         mesh->o_z,
                         nrs->scalar->o_solution("cls"));
+
+  const dfloat maxCFL = 1.0;
+  const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
+
+  if (cfl > maxCFL) {
+    if (platform->comm.mpiRank() == 0) {
+      printf("WARNING: CFL %.6g exceeded limit %.6g; writing restart file\n",
+             cfl, maxCFL);
+    }
+
+    nrs->writeCheckpoint(time);
+  }
 }
