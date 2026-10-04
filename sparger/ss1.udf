@@ -136,4 +136,13 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Viscosity Ratio: %.8e\n", muRatio);
   }
   lvlSet::solve(time);
+
+  //prevent spurious interface above free surface
+  auto mesh = nrs->meshV;
+  const dfloat freeSurfaceZ = -46.9564724409449;
+  const dfloat clearThreshold = 2.0 * lvlSet::getInterfaceWidth();
+  clearAboveFreeSurface(mesh->Nlocal, 
+                        freeSurfaceZ + clearThreshold,
+                        mesh->o_z,
+                        nrs->scalar->o_solution("cls"));
 }

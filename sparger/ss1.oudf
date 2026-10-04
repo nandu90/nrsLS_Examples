@@ -20,6 +20,21 @@ void udfDirichlet(bcData *bc)
   }
 }
 
+@kernel void clearAboveFreeSurface(const dlong N,
+                                   const dfloat clearThreshold,
+                                   @ restrict const dfloat *Z,
+                                   @ restrict dfloat *PSI)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat z = Z[n];
+    const dfloat psi = PSI[n];
+
+    if(z > clearThreshold) {
+      PSI[n] = fmin(0.01, psi);
+    }
+  }
+}
+
 @kernel void tlsic(const dlong N,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
