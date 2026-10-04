@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 from pathlib import Path
 import struct
+import time
 
 import numpy as np
 
@@ -24,18 +26,22 @@ from generate_discharge_section import (
 
 # Axial dimensions, nondimensionalized by the 1.5875 mm tube diameter.
 Z_BOTTOM = -0.0932434 / 0.0015875
-Z_VESSEL_TOP = -0.0680034 / 0.0015875
+Z_ORIGINAL_VESSEL_TOP = -0.0680034 / 0.0015875
+Z_FREE_SURFACE = -0.0745434 / 0.0015875
+OUTLET_HEIGHT_ABOVE_FREE_SURFACE = 10.0
+Z_VESSEL_TOP = Z_FREE_SURFACE + OUTLET_HEIGHT_ABOVE_FREE_SURFACE
 TUBE_LENGTH_FACTOR = 0.5
-Z_TUBE_INLET = Z_SECTION + TUBE_LENGTH_FACTOR * (Z_VESSEL_TOP - Z_SECTION)
+Z_TUBE_INLET = Z_SECTION + TUBE_LENGTH_FACTOR * (
+    Z_ORIGINAL_VESSEL_TOP - Z_SECTION
+)
 
 # Approximately 0.05 tube diameters per axial macro element. Every block uses
 # the same discharge-plane section, so all three upward blocks remain conformal
 # to the complete cylinder extruded downward.
 TARGET_AXIAL_SPACING = 0.05
+MAX_RELAXED_AXIAL_SPACING = 0.25
+AXIAL_SPACING_GROWTH = 1.03
 N_LOWER_LAYERS = math.ceil((Z_SECTION - Z_BOTTOM) / TARGET_AXIAL_SPACING)
-N_OUTER_UPPER_LAYERS = math.ceil(
-    (Z_VESSEL_TOP - Z_SECTION) / TARGET_AXIAL_SPACING
-)
 N_TUBE_LAYERS = math.ceil((Z_TUBE_INLET - Z_SECTION) / TARGET_AXIAL_SPACING)
 
 HERE = Path(__file__).resolve().parent
@@ -63,6 +69,46 @@ BOUNDARY_IDS = {
     "tube_inlet": 6,
     "tube_wall": 7,
 }
+
+
+def _graded_upper_layer_positions() -> np.ndarray:
+    """Return graded axial fractions for the annulus above the discharge.
+
+    Fine spacing is retained through the initial free surface. Above it, the
+    layer widths grow smoothly and are capped so the extended outlet buffer
+    does not create either an excessive element count or an abrupt size jump.
+    """
+    fine_length = Z_FREE_SURFACE - Z_SECTION
+    relaxed_length = Z_VESSEL_TOP - Z_FREE_SURFACE
+    if fine_length <= 0.0 or relaxed_length <= 0.0:
+        raise ValueError("free surface must lie between discharge and outlet")
+
+    n_fine = math.ceil(fine_length / TARGET_AXIAL_SPACING)
+    fine_width = fine_length / n_fine
+    widths = [fine_width] * n_fine
+
+    relaxed_widths = []
+    covered = 0.0
+    next_width = fine_width
+    while covered < relaxed_length:
+        next_width = min(
+            MAX_RELAXED_AXIAL_SPACING,
+            next_width * AXIAL_SPACING_GROWTH,
+        )
+        relaxed_widths.append(next_width)
+        covered += next_width
+
+    # Scale only the relaxed segment to land exactly on the requested outlet.
+    relaxed_widths = np.asarray(relaxed_widths) * (relaxed_length / covered)
+    widths.extend(relaxed_widths.tolist())
+
+    positions = np.concatenate(([0.0], np.cumsum(widths)))
+    positions[-1] = Z_VESSEL_TOP - Z_SECTION
+    return positions / positions[-1]
+
+
+UPPER_OUTER_LAYER_POSITIONS = _graded_upper_layer_positions()
+N_OUTER_UPPER_LAYERS = UPPER_OUTER_LAYER_POSITIONS.size - 1
 
 
 def _write_re2_with_boundary_ids(mesh: hexmesh.HexMesh, path: Path) -> None:
@@ -143,7 +189,7 @@ def build_mesh() -> hexmesh.HexMesh:
     upper_outer = hexmesh.extrude(
         outer_section,
         length=Z_VESSEL_TOP - Z_SECTION,
-        layers=N_OUTER_UPPER_LAYERS,
+        layers=UPPER_OUTER_LAYER_POSITIONS,
         axis=(0.0, 0.0, 1.0),
         element_tags=outer_section.element_tags,
         first_tag="join_outer",
@@ -181,25 +227,78 @@ def build_mesh() -> hexmesh.HexMesh:
     return mesh
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--quality-order",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "quality sampling order (default: 1 for a fast corner check; "
+            "use 8 for the full solver-order audit, or 0 to skip)"
+        ),
+    )
+    parser.add_argument(
+        "--skip-vtu",
+        action="store_true",
+        help="write only sparger.re2 and skip the ParaView file",
+    )
+    args = parser.parse_args()
+    if args.quality_order < 0:
+        parser.error("--quality-order must be non-negative")
+    return args
+
+
 def main() -> None:
+    args = _parse_args()
+    start = time.perf_counter()
     mesh = build_mesh()
-    quality = hexmesh.quality_summary(mesh, order=8)
+    built = time.perf_counter()
+
+    quality = None
+    if args.quality_order:
+        quality = hexmesh.quality_summary(mesh, order=args.quality_order)
+    checked = time.perf_counter()
 
     _write_re2_with_boundary_ids(mesh, RE2_OUTPUT)
-    writer.to_vtu(mesh, str(VTU_OUTPUT), groups=GROUPS)
+    if not args.skip_vtu:
+        writer.to_vtu(mesh, str(VTU_OUTPUT), groups=GROUPS)
+    written = time.perf_counter()
 
     print(f"wrote: {RE2_OUTPUT}")
-    print(f"wrote: {VTU_OUTPUT}")
+    if not args.skip_vtu:
+        print(f"wrote: {VTU_OUTPUT}")
     print(f"vessel z range: {Z_BOTTOM:.12g} to {Z_VESSEL_TOP:.12g}")
+    print(f"free-surface z: {Z_FREE_SURFACE:.12g}")
+    print(
+        "outlet height above free surface: "
+        f"{Z_VESSEL_TOP - Z_FREE_SURFACE:.12g}"
+    )
     print(f"tube z range: {Z_SECTION:.12g} to {Z_TUBE_INLET:.12g}")
     print(f"target axial spacing: {TARGET_AXIAL_SPACING:.12g}")
+    upper_dz = np.diff(UPPER_OUTER_LAYER_POSITIONS) * (
+        Z_VESSEL_TOP - Z_SECTION
+    )
+    print(
+        "upper-annulus axial spacing min/max: "
+        f"{upper_dz.min():.12g} / {upper_dz.max():.12g}"
+    )
     print(f"lower axial layers: {N_LOWER_LAYERS}")
     print(f"upper-annulus axial layers: {N_OUTER_UPPER_LAYERS}")
     print(f"tube axial layers: {N_TUBE_LAYERS}")
     print(f"points: {mesh.n_points}")
     print(f"hexahedra: {mesh.n_hexes}")
     print(f"boundary groups: {sorted(mesh.face_group_tags)}")
-    print(f"quality at solver order 8: {quality}")
+    if quality is None:
+        print("quality check: skipped")
+    else:
+        print(f"quality at sampling order {args.quality_order}: {quality}")
+    print(
+        "timing [s] build/quality/write/total: "
+        f"{built - start:.2f} / {checked - built:.2f} / "
+        f"{written - checked:.2f} / {written - start:.2f}"
+    )
 
 
 if __name__ == "__main__":
