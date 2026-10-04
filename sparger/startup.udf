@@ -118,8 +118,8 @@ void UDF_Setup()
   const dfloat mug = 4.64e-5;
   const dfloat sigma = 0.1;
 
-  rhoRatio = 1.0; //rhol/rhog * 0.1;  //must be heavier / lighter
-  muRatio = 1.0; //mul/mug;  //must be heavier / lighter
+  rhoRatio = rhol/rhog * 0.1;  //must be heavier / lighter
+  muRatio =  mul/mug;  //must be heavier / lighter
 
   Re = rhol * velScale * lenScale / mul;
   Fr = velScale * velScale / (gdim * lenScale);
