@@ -35,6 +35,23 @@ void udfDirichlet(bcData *bc)
   }
 }
 
+@kernel void applyOutletViscositySponge(const dlong N,
+                                        const dfloat spongeStartZ,
+                                        const dfloat spongeEndZ,
+                                        const dfloat maxMultiplier,
+                                        @ restrict const dfloat *Z,
+                                        @ restrict dfloat *viscosity)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    // C1-continuous smoothstep: no viscosity-gradient jump at either end.
+    dfloat eta = (Z[n] - spongeStartZ) / (spongeEndZ - spongeStartZ);
+    eta = max(0.0, min(1.0, eta));
+    const dfloat ramp = eta * eta * (3.0 - 2.0 * eta);
+    const dfloat multiplier = 1.0 + (maxMultiplier - 1.0) * ramp;
+    viscosity[n] *= multiplier;
+  }
+}
+
 @kernel void tlsic(const dlong N,
                    @ restrict const dfloat *X,
                    @ restrict const dfloat *Y,
