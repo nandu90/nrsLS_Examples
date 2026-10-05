@@ -16,6 +16,12 @@ void udfDirichlet(bcData *bc)
       bc->sScalar = 1.0;
     } else if(bc->id == 3 || bc->id == 6) {
       bc->sScalar = 0.0;
+    } else if(bc->id == 2) { //side walls
+      const dfloat zFree = -46.9564724409449;
+      const dfloat phi = zFree - bc->z;
+      const dfloat epsilon = bc->usrwrk[0];
+      const dfloat theta = phi / (2.0 * epsilon);
+      bc->sScalar = 0.5 * (tanh(theta) + 1.0);
     }
   }
 }
