@@ -175,12 +175,13 @@ void UDF_ExecuteStep(double time, int tstep)
   const dfloat maxCFL = 1.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
 
-  if (cfl > maxCFL) {
-    if (platform->comm.mpiRank() == 0) {
-      printf("WARNING: CFL %.6g exceeded limit %.6g; writing restart file\n",
-             cfl, maxCFL);
-    }
-
+  if (cfl > maxCFL || nrs->dt[0] < 1e-8) {
     nrs->writeCheckpoint(time);
+
+    nekrsCheck(true, 
+               MPI_COMM_SELF,
+               EXIT_FAILURE,
+               "%s\n",
+               "CFL > 1.0 || dt < 1e-8!");
   }
 }
