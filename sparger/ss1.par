@@ -38,7 +38,7 @@ regularization = svv
 
 
 [SCALAR CLS]
-boundaryTypeMap = inlet, inlet, inlet, zeroNeumann, zeroNeumann, inlet, zeroNeumann
+boundaryTypeMap = inlet, zeroNeumann, inlet, inlet, zeroNeumann, inlet, inlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
 residualTol = 1e-8

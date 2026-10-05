@@ -16,13 +16,56 @@ void udfDirichlet(bcData *bc)
       bc->sScalar = 1.0;
     } else if(bc->id == 3 || bc->id == 6) {
       bc->sScalar = 0.0;
-    } else if(bc->id == 2) { //side walls
-      const dfloat zFree = -46.9564724409449;
-      const dfloat phi = zFree - bc->z;
+    } else if(bc->id == 4) { // bore bottom
+      const dfloat tubeR = 0.5;
+      const dfloat tubey = 0.0;
+      const dfloat tubex1 = 1.0;
+      const dfloat tubex2 = -1.0;
+
+      const dfloat dist1 = sqrt(pow(bc->x - tubex1, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
+      const dfloat dist2 = sqrt(pow(bc->x - tubex2, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
+      const dfloat phi = fmin(dist1, dist2);
+
+      const dfloat epsilon = bc->usrwrk[0];
+      const dfloat theta = phi / (2.0 * epsilon);
+      bc->sScalar = 0.5 * (tanh(theta) + 1.0);
+    } else if(bc->id == 7) { // tube walls
+      const dfloat tubeDischargeZ = -52.4367874015748;
+      const dfloat phi = tubeDischargeZ - bc->z;
+
       const dfloat epsilon = bc->usrwrk[0];
       const dfloat theta = phi / (2.0 * epsilon);
       bc->sScalar = 0.5 * (tanh(theta) + 1.0);
     }
+  }
+}
+
+@kernel void clearBoundaryBelowFreeSurface(const dlong Nelements,
+                                           const dlong bID,
+                                           const dfloat freeSurfaceZ,
+                                           const dfloat clearThreshold,
+                                           const dfloat epsilon,
+                                           @ restrict const dlong *vmapM,
+                                           @ restrict const int *EToBM,
+                                           @ restrict const dfloat *Z,
+                                           @ restrict dfloat *PSI)
+{
+  for (dlong e = 0; e < Nelements; ++e; @outer(0)) {
+    for (int t = 0; t < p_Nfp; ++t; @inner(0)) {
+      for (int f = 0; f < p_Nfaces; ++f) {
+        const dlong boundaryID = EToBM[f + p_Nfaces*e];
+        if (boundaryID == bID) {
+          const dlong sid = e*p_Nfaces*p_Nfp + f*p_Nfp + t;
+          const dlong id = vmapM[sid];
+          if (Z[id] < clearThreshold) {
+            const dfloat phi = freeSurfaceZ - Z[id];
+            const dfloat theta = phi / (2.0 * epsilon);
+            PSI[id] = 0.5 * (tanh(theta) + 1.0);
+          }
+        }
+      }
+    }
+    @barrier;
   }
 }
 

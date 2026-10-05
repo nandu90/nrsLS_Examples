@@ -167,10 +167,24 @@ void UDF_ExecuteStep(double time, int tstep)
   auto mesh = nrs->meshV;
   const dfloat freeSurfaceZ = -46.9564724409449;
   const dfloat clearThreshold = 2.0 * lvlSet::getInterfaceWidth();
+  auto o_cls = nrs->scalar->o_solution("cls");
   clearAboveFreeSurface(mesh->Nlocal, 
                         freeSurfaceZ + clearThreshold,
                         mesh->o_z,
-                        nrs->scalar->o_solution("cls"));
+                        o_cls);
+
+  // Boundary ID 2 uses a zero-Neumann CLS condition. Restore the initial
+  // signed-distance Heaviside profile sufficiently below the free surface,
+  // leaving the evolving diffuse-interface band untouched.
+  clearBoundaryBelowFreeSurface(mesh->Nelements,
+                                2,
+                                freeSurfaceZ,
+                                freeSurfaceZ - clearThreshold,
+                                lvlSet::getInterfaceWidth(),
+                                mesh->o_vmapM,
+                                mesh->o_EToB,
+                                mesh->o_z,
+                                o_cls);
 
   const dfloat maxCFL = 1.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
