@@ -16,26 +16,26 @@ void udfDirichlet(bcData *bc)
       bc->sScalar = 1.0;
     } else if(bc->id == 3 || bc->id == 6) {
       bc->sScalar = 0.0;
-    } else if(bc->id == 4) { // bore bottom
-      const dfloat tubeR = 0.5;
-      const dfloat tubey = 0.0;
-      const dfloat tubex1 = 1.0;
-      const dfloat tubex2 = -1.0;
+    // } else if(bc->id == 4) { // bore bottom
+    //   const dfloat tubeR = 0.5;
+    //   const dfloat tubey = 0.0;
+    //   const dfloat tubex1 = 1.0;
+    //   const dfloat tubex2 = -1.0;
 
-      const dfloat dist1 = sqrt(pow(bc->x - tubex1, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
-      const dfloat dist2 = sqrt(pow(bc->x - tubex2, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
-      const dfloat phi = fmin(dist1, dist2);
+    //   const dfloat dist1 = sqrt(pow(bc->x - tubex1, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
+    //   const dfloat dist2 = sqrt(pow(bc->x - tubex2, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
+    //   const dfloat phi = fmin(dist1, dist2);
 
-      const dfloat epsilon = bc->usrwrk[0];
-      const dfloat theta = phi / (2.0 * epsilon);
-      bc->sScalar = 0.5 * (tanh(theta) + 1.0);
-    } else if(bc->id == 7) { // tube walls
-      const dfloat tubeDischargeZ = -52.4367874015748;
-      const dfloat phi = tubeDischargeZ - bc->z;
+    //   const dfloat epsilon = bc->usrwrk[0];
+    //   const dfloat theta = phi / (2.0 * epsilon);
+    //   bc->sScalar = 0.5 * (tanh(theta) + 1.0);
+    // } else if(bc->id == 7) { // tube walls
+    //   const dfloat tubeDischargeZ = -52.4367874015748;
+    //   const dfloat phi = tubeDischargeZ - bc->z;
 
-      const dfloat epsilon = bc->usrwrk[0];
-      const dfloat theta = phi / (2.0 * epsilon);
-      bc->sScalar = 0.5 * (tanh(theta) + 1.0);
+    //   const dfloat epsilon = bc->usrwrk[0];
+    //   const dfloat theta = phi / (2.0 * epsilon);
+    //   bc->sScalar = 0.5 * (tanh(theta) + 1.0);
     }
   }
 }
