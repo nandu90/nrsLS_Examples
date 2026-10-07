@@ -1,7 +1,7 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-#startFrom = "ss1.fld"
+startFrom = "ss1.fld"
 polynomialOrder = 5
 stopAt = endTime
 endTime = 10
@@ -47,7 +47,8 @@ regularization = svv
 [TLSR]
 solveFrequency = 1e-2
 residualTol = 1e-8
-maximumSteps = 500
+maximumSteps = 750
+regularization = svv+scalingCoeff=1.0+filterPower=7.0
 
 [CLSR]
 solveFrequency = 1e-3
@@ -55,5 +56,5 @@ residualTol = 1e-8
 maximumSteps = 100
 
 [LVLSET]
-interfaceWidthFactor = 2.0
+interfaceWidthFactor = 2.5
 interfaceWidthMesh = mean
