@@ -21,7 +21,7 @@ static dfloat rhol;
 // at the extended outlet.
 static dfloat outletSpongeStartZ = -0.0680034 / 0.0015875;
 static dfloat outletSpongeEndZ = -0.0745434 / 0.0015875 + 10.0;
-static dfloat outletViscosityMultiplier = 10.0;
+static dfloat outletViscosityMultiplier = 100.0;
 
 void preFluid(double time, int tstep)
 {
@@ -166,7 +166,7 @@ void UDF_ExecuteStep(double time, int tstep)
   //prevent spurious interface above free surface
   auto mesh = nrs->meshV;
   const dfloat freeSurfaceZ = -46.9564724409449;
-  const dfloat clearThreshold = 2.0 * lvlSet::getInterfaceWidth();
+  const dfloat clearThreshold = 5.0 * lvlSet::getInterfaceWidth();
   auto o_cls = nrs->scalar->o_solution("cls");
   clearAboveFreeSurface(mesh->Nlocal, 
                         freeSurfaceZ + clearThreshold,
