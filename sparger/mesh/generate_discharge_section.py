@@ -34,14 +34,20 @@ TUBE_RADIUS = 0.5
 TUBE_CENTERS = ((-1.0, 0.0), (1.0, 0.0))
 Z_SECTION = -52.4367874015748
 
-# Mesh controls.  N_CIRC must equal 4*N_SIDE, and N_SIDE must be even.
+# Mesh controls. N_CIRC must equal 4*N_SIDE, and N_SIDE must be even. Keep the
+# original tube O-grid resolution; refine only the surrounding radial region.
 N_SIDE = 12
 N_CIRC = 4 * N_SIDE
 N_TUBE_RADIAL = 5
 N_SURROUNDING_RADIAL = 8
-# The narrowest tube-to-divider gap is 0.5. This thickness fills that gap
-# uniformly; elsewhere the layers grow smoothly toward the shell.
-FIRST_SURROUNDING_LAYER = 0.5 / N_SURROUNDING_RADIAL
+# Blend uniform and cosine spacing. This makes radial spacing grow smoothly
+# away from each tube and shrink again near the outer interface, avoiding one
+# oversized terminal element. Zero is uniform; one is full cosine clustering.
+SURROUNDING_END_CLUSTERING = 0.25
+# Redistribute only the surrounding rays that terminate on the x=0 divider.
+# A value of one makes their meeting locations uniformly spaced from -R to R;
+# zero retains the original tan(angle) distribution. Tube points are unchanged.
+CENTER_DIVIDER_SPREAD = 0.75
 N_OUTER_SHELL_RADIAL = 14
 FIRST_OUTER_SHELL_LAYER = 0.15
 ORDER = 1
@@ -99,28 +105,19 @@ def _layered_surrounding(
     outer_points: np.ndarray,
     outer_loop: LineMesh,
 ) -> QuadMesh:
-    """Mesh concentric near-tube layers followed by smoothly growing layers."""
+    """Mesh the tube-to-half-disk region with smooth two-sided grading."""
     delta = outer_points - tube_points
-    gaps = np.linalg.norm(delta, axis=1)
-    directions = delta / gaps[:, None]
-    ratios = np.asarray(
-        [
-            _geometric_ratio(float(gap), FIRST_SURROUNDING_LAYER,
-                             N_SURROUNDING_RADIAL)
-            for gap in gaps
-        ]
+
+    uniform = np.linspace(0.0, 1.0, N_SURROUNDING_RADIAL + 1)
+    cosine = 0.5 * (1.0 - np.cos(math.pi * uniform))
+    fractions = (
+        (1.0 - SURROUNDING_END_CLUSTERING) * uniform
+        + SURROUNDING_END_CLUSTERING * cosine
     )
 
     rings: list[LineMesh] = []
-    cumulative = np.zeros_like(gaps)
-    for layer in range(N_SURROUNDING_RADIAL + 1):
-        if layer == 0:
-            points = tube_points
-        elif layer == N_SURROUNDING_RADIAL:
-            points = outer_points
-        else:
-            cumulative += FIRST_SURROUNDING_LAYER * ratios ** (layer - 1)
-            points = tube_points + cumulative[:, None] * directions
+    for fraction in fractions:
+        points = tube_points + fraction * delta
         # Radial lofting winds the annular quads opposite to an O-grid built
         # from a CCW boundary, so reverse each ring to keep the final section
         # consistently +z-oriented for later hexahedral extrusion.
@@ -220,6 +217,31 @@ def _distance_to_half_disk_boundary(
     return np.minimum(circle, divider)
 
 
+def _spread_center_divider_points(points: np.ndarray) -> np.ndarray:
+    """Redistribute the x=0 divider endpoints toward uniform spacing.
+
+    Only the outer endpoints of rays that connect the two tube half-sections
+    are moved. The tube circumference is untouched; `_layered_surrounding`
+    interpolates from that fixed circumference to these endpoints, so the
+    lateral displacement develops gradually along each radial mesh line.
+    """
+    spread_points = points.copy()
+    divider_ids = np.flatnonzero(np.abs(spread_points[:, 0]) < 1.0e-12)
+    order = np.argsort(spread_points[divider_ids, 1])
+    sorted_ids = divider_ids[order]
+    original_y = spread_points[sorted_ids, 1]
+    target_y = np.linspace(
+        -INNER_SHELL_RADIUS,
+        INNER_SHELL_RADIUS,
+        sorted_ids.size,
+    )
+    spread_points[sorted_ids, 1] = (
+        (1.0 - CENTER_DIVIDER_SPREAD) * original_y
+        + CENTER_DIVIDER_SPREAD * target_y
+    )
+    return spread_points
+
+
 def _tube_angles(center_x: float) -> np.ndarray:
     """CCW tube angles with exact half-disk corner rays.
 
@@ -271,6 +293,7 @@ def _half_section(center_x: float, tube_region: str) -> tuple[QuadMesh, QuadMesh
             np.full(N_CIRC, Z_SECTION),
         )
     )
+    outer_points = _spread_center_divider_points(outer_points)
 
     # The center-divider edges are internal and deliberately untagged.  Every
     # remaining edge lies on the inner-shell circle.
