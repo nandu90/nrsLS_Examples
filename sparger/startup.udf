@@ -16,6 +16,13 @@ static dfloat lenScale;
 static dfloat velScale;
 static dfloat rhol;
 
+// Outlet sponge coordinates use the tube diameter as reference length. The
+// viscosity is unchanged below the former outlet and reaches this multiplier
+// at the extended outlet.
+static dfloat outletSpongeStartZ = -0.0680034 / 0.0015875;
+static dfloat outletSpongeEndZ = -0.0745434 / 0.0015875 + 10.0;
+static dfloat outletViscosityMultiplier = 10.0;
+
 void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
@@ -49,6 +56,17 @@ void preFluid(double time, int tstep)
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
+
+  auto mesh = nrs->meshV;
+  // lvlSet::updateProperties rewrites the phase viscosity first, so this
+  // multiplication is applied once per property update and cannot accumulate.
+  auto o_viscosity = nrs->fluid->o_prop.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
+  applyOutletViscositySponge(mesh->Nlocal,
+                            outletSpongeStartZ,
+                            outletSpongeEndZ,
+                            outletViscosityMultiplier,
+                            mesh->o_z,
+                            o_viscosity);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -118,12 +136,16 @@ void UDF_Setup()
   const dfloat mug = 4.64e-5;
   const dfloat sigma = 0.1;
 
-  rhoRatio = rhol/rhog * 0.1;  //must be heavier / lighter
+  rhoRatio = rhol/rhog * 0.5;  //must be heavier / lighter
   muRatio =  mul/mug;  //must be heavier / lighter
 
   Re = rhol * velScale * lenScale / mul;
   Fr = velScale * velScale / (gdim * lenScale);
   We = lenScale * rhol * velScale * velScale / sigma;
+
+  const auto interfaceWidth = lvlSet::getInterfaceWidth();
+  platform->app->bc->o_usrwrk.resize(1);
+  platform->app->bc->o_usrwrk.copyFrom(&interfaceWidth, 1);
 }
 
 void UDF_ExecuteStep(double time, int tstep)
@@ -134,6 +156,46 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Froude Number: %.8e\n", Fr);
     printf("Density Ratio: %.8e\n", rhoRatio);
     printf("Viscosity Ratio: %.8e\n", muRatio);
+    printf("Outlet viscosity sponge: z=[%.8e, %.8e], multiplier=1 to %.8e\n",
+           outletSpongeStartZ,
+           outletSpongeEndZ,
+           outletViscosityMultiplier);
   }
   lvlSet::solve(time);
+
+  //prevent spurious interface above free surface
+  auto mesh = nrs->meshV;
+  const dfloat freeSurfaceZ = -46.9564724409449;
+  const dfloat clearThreshold = 2.0 * lvlSet::getInterfaceWidth();
+  auto o_cls = nrs->scalar->o_solution("cls");
+  clearAboveFreeSurface(mesh->Nlocal, 
+                        freeSurfaceZ + clearThreshold,
+                        mesh->o_z,
+                        o_cls);
+
+  // Boundary ID 2 uses a zero-Neumann CLS condition. Restore the initial
+  // signed-distance Heaviside profile sufficiently below the free surface,
+  // leaving the evolving diffuse-interface band untouched.
+  clearBoundaryBelowFreeSurface(mesh->Nelements,
+                                2,
+                                freeSurfaceZ,
+                                freeSurfaceZ - clearThreshold,
+                                lvlSet::getInterfaceWidth(),
+                                mesh->o_vmapM,
+                                mesh->o_EToB,
+                                mesh->o_z,
+                                o_cls);
+
+  const dfloat maxCFL = 1.0;
+  const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
+
+  if (cfl > maxCFL || nrs->dt[0] < 1e-8) {
+    nrs->writeCheckpoint(time);
+
+    nekrsCheck(true, 
+               MPI_COMM_SELF,
+               EXIT_FAILURE,
+               "%s\n",
+               "CFL > 1.0 || dt < 1e-8!");
+  }
 }
