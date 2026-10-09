@@ -7,7 +7,7 @@ void udfDirichlet(bcData *bc)
     // velocity is unity in magnitude and points in the -z direction.
     bc->uzFluid = -1.0;
   } else if (isField("fluid pressure")) {
-    const dfloat iU0delta = 10.0;
+    const dfloat iU0delta = 1.0;
     const dfloat un = bc->uxFluid * bc->nx + bc->uyFluid * bc->ny + bc->uzFluid * bc->nz;
     const dfloat s0 = 0.5 * (1.0 - tanh(un * iU0delta));
     const dfloat rho = bc->transCoeff;

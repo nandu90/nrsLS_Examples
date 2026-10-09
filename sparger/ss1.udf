@@ -16,13 +16,6 @@ static dfloat lenScale;
 static dfloat velScale;
 static dfloat rhol;
 
-// Outlet sponge coordinates use the tube diameter as reference length. The
-// viscosity is unchanged below the former outlet and reaches this multiplier
-// at the extended outlet.
-static dfloat outletSpongeStartZ = -0.0680034 / 0.0015875;
-static dfloat outletSpongeEndZ = -0.0745434 / 0.0015875 + 10.0;
-static dfloat outletViscosityMultiplier = 100.0;
-
 void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
@@ -56,17 +49,6 @@ void preFluid(double time, int tstep)
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
-
-  auto mesh = nrs->meshV;
-  // lvlSet::updateProperties rewrites the phase viscosity first, so this
-  // multiplication is applied once per property update and cannot accumulate.
-  auto o_viscosity = nrs->fluid->o_prop.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
-  applyOutletViscositySponge(mesh->Nlocal,
-                            outletSpongeStartZ,
-                            outletSpongeEndZ,
-                            outletViscosityMultiplier,
-                            mesh->o_z,
-                            o_viscosity);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
