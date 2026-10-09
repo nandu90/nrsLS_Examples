@@ -138,10 +138,6 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Froude Number: %.8e\n", Fr);
     printf("Density Ratio: %.8e\n", rhoRatio);
     printf("Viscosity Ratio: %.8e\n", muRatio);
-    printf("Outlet viscosity sponge: z=[%.8e, %.8e], multiplier=1 to %.8e\n",
-           outletSpongeStartZ,
-           outletSpongeEndZ,
-           outletViscosityMultiplier);
   }
   lvlSet::solve(time);
 
