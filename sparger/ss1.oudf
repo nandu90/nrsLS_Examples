@@ -85,6 +85,24 @@ void udfDirichlet(bcData *bc)
   }
 }
 
+@kernel void clearVolumeBelowInjector(const dlong N,
+                                      const dfloat injectorZ,
+                                      const dfloat radialThreshold,
+                                      @ restrict const dfloat *X,
+                                      @ restrict const dfloat *Y,
+                                      @ restrict const dfloat *Z,
+                                      @ restrict dfloat *PSI)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat radialThresholdSq = radialThreshold * radialThreshold;
+    const dfloat radiusSq = X[n]*X[n] + Y[n]*Y[n];
+
+    if ((Z[n] < injectorZ) && (radiusSq > radialThresholdSq)) {
+      PSI[n] = fmax(1.0 - 0.01, PSI[n]);
+    }
+  }
+}
+
 @kernel void applyOutletViscositySponge(const dlong N,
                                         const dfloat spongeStartZ,
                                         const dfloat spongeEndZ,

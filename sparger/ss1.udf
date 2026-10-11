@@ -16,6 +16,19 @@ static dfloat lenScale;
 static dfloat velScale;
 static dfloat rhol;
 
+// Nondimensional sparger geometry (tube diameter is the length scale).
+static dfloat shellCenterX = 0.0;
+static dfloat shellCenterY = 0.0;
+static dfloat outerShellRadius = 6.43228560629921;
+static dfloat innerShellRadius = 2.0;
+static dfloat tubeRadius = 0.5;
+static dfloat tube1CenterX = -1.0;
+static dfloat tube2CenterX = 1.0;
+static dfloat tubeCenterY = 0.0;
+static dfloat injectorDischargeZ = -52.4367874015748;
+static dfloat freeSurfaceZ = -46.9564724409449;
+static dfloat surfaceProjectionTolerance = 0.025;
+
 void preFluid(double time, int tstep)
 {
   auto mesh = nrs->meshV;
@@ -69,33 +82,33 @@ void UDF_Setup()
   velScale = 0.21;
 
   // The generated mesh is already nondimensional and centered at (0,0).
-  const dfloat tolerance = 0.025;
-  const dfloat shellCenterY = 0.0;
-  const dfloat outerShellRadius = 6.43228560629921;
-  const dfloat innerShellRadius = 2.0;
-  const dfloat tubeRadius = 0.5;
-  const dfloat tube1CenterX = -1.0;
-  const dfloat tube2CenterX =  1.0;
-
   projectSurfaceToCylinder(2,
                            0.0, 0.0, 1.0,
-                           0.0, shellCenterY, 0.0,
-                           outerShellRadius, tolerance, false); //outer shell
+                           shellCenterX, shellCenterY, 0.0,
+                           outerShellRadius,
+                           surfaceProjectionTolerance,
+                           false); //outer shell
                                                  
   projectSurfaceToCylinder(5,
                            0.0, 0.0, 1.0,
-                           0.0, shellCenterY, 0.0,
-                           innerShellRadius, tolerance, false); //inner shell
+                           shellCenterX, shellCenterY, 0.0,
+                           innerShellRadius,
+                           surfaceProjectionTolerance,
+                           false); //inner shell
 
   projectSurfaceToCylinder(7,
                            0.0, 0.0, 1.0,
-                           tube1CenterX, shellCenterY, 0.0,
-                           tubeRadius, tolerance, false); //tube 1
+                           tube1CenterX, tubeCenterY, 0.0,
+                           tubeRadius,
+                           surfaceProjectionTolerance,
+                           false); //tube 1
                                                    
   projectSurfaceToCylinder(7,
                            0.0, 0.0, 1.0,
-                           tube2CenterX, shellCenterY, 0.0,
-                           tubeRadius, tolerance, false); //tube 2
+                           tube2CenterX, tubeCenterY, 0.0,
+                           tubeRadius,
+                           surfaceProjectionTolerance,
+                           false); //tube 2
 
   // All coordinate changes are complete; update geometric factors once.
   mesh->update();
@@ -143,7 +156,6 @@ void UDF_ExecuteStep(double time, int tstep)
 
   //prevent spurious interface above free surface
   auto mesh = nrs->meshV;
-  const dfloat freeSurfaceZ = -46.9564724409449;
   const dfloat clearThreshold = 5.0 * lvlSet::getInterfaceWidth();
   auto o_cls = nrs->scalar->o_solution("cls");
   clearAboveFreeSurface(mesh->Nlocal, 
@@ -163,6 +175,17 @@ void UDF_ExecuteStep(double time, int tstep)
                                 mesh->o_EToB,
                                 mesh->o_z,
                                 o_cls);
+
+  // Remove spurious gas/interface structures in the lower peripheral vessel.
+  // Start halfway across the annulus between the inner and outer shell radii.
+  const dfloat peripheralRadius = 0.5 * (innerShellRadius + outerShellRadius);
+  clearVolumeBelowInjector(mesh->Nlocal,
+                           injectorDischargeZ,
+                           peripheralRadius,
+                           mesh->o_x,
+                           mesh->o_y,
+                           mesh->o_z,
+                           o_cls);
 
   const dfloat maxCFL = 1.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
