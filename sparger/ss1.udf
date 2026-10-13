@@ -29,7 +29,7 @@ static dfloat injectorDischargeZ = -52.4367874015748;
 static dfloat freeSurfaceZ = -46.9564724409449;
 static dfloat outletZ = -36.9564724409449;
 static dfloat surfaceProjectionTolerance = 0.025;
-static dfloat outletViscosityMultiplier = 10.0;
+static dfloat outletViscosityMultiplier = 1.0;
 
 void preFluid(double time, int tstep)
 {
