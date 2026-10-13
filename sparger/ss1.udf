@@ -68,6 +68,7 @@ void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
   options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING UNSPLIT STEPS", "20");
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }
 
