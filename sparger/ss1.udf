@@ -198,7 +198,7 @@ void UDF_ExecuteStep(double time, int tstep)
   // Start halfway across the annulus between the inner and outer shell radii.
   const dfloat peripheralRadius = 0.5 * (innerShellRadius + outerShellRadius);
   clearVolumeBelowInjector(mesh->Nlocal,
-                           injectorDischargeZ,
+                           freeSurfaceZ - 2.0, //clear below this z-threshold
                            peripheralRadius,
                            mesh->o_x,
                            mesh->o_y,
