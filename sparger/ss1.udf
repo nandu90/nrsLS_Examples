@@ -30,6 +30,9 @@ static dfloat freeSurfaceZ = -46.9564724409449;
 static dfloat outletZ = -36.9564724409449;
 static dfloat surfaceProjectionTolerance = 0.025;
 static dfloat outletViscosityMultiplier = 1.0;
+// Fraction across the annular gap measured from the inner shell toward the
+// outer shell. Nodes at larger radii are cleared by clearVolumeBelowInjector.
+static dfloat peripheralRadiusFraction = 0.75;
 
 void preFluid(double time, int tstep)
 {
@@ -195,8 +198,10 @@ void UDF_ExecuteStep(double time, int tstep)
                                 o_cls);
 
   // Remove spurious gas/interface structures in the lower peripheral vessel.
-  // Start halfway across the annulus between the inner and outer shell radii.
-  const dfloat peripheralRadius = 0.5 * (innerShellRadius + outerShellRadius);
+  // Interpolate across the annular gap; multiplying the sum of the radii is
+  // only correct for the special midpoint value 0.5.
+  const dfloat peripheralRadius = innerShellRadius
+      + peripheralRadiusFraction * (outerShellRadius - innerShellRadius);
   clearVolumeBelowInjector(mesh->Nlocal,
                            freeSurfaceZ - 2.0, //clear below this z-threshold
                            peripheralRadius,
