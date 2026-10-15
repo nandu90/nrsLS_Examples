@@ -29,10 +29,9 @@ static dfloat injectorDischargeZ = -52.4367874015748;
 static dfloat freeSurfaceZ = -46.9564724409449;
 static dfloat outletZ = -36.9564724409449;
 static dfloat surfaceProjectionTolerance = 0.025;
-static dfloat outletViscosityMultiplier = 1.0;
 // Fraction across the annular gap measured from the inner shell toward the
 // outer shell. Nodes at larger radii are cleared by clearVolumeBelowInjector.
-static dfloat peripheralRadiusFraction = 0.75;
+static dfloat peripheralRadiusFraction = 0.85;
 
 void preFluid(double time, int tstep)
 {
@@ -67,17 +66,6 @@ void preFluid(double time, int tstep)
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
-
-  // Apply the sponge after rebuilding the phase properties so the viscosity
-  // multiplier is applied once per update rather than accumulating in time.
-  auto mesh = nrs->meshV;
-  auto o_viscosity = nrs->fluid->o_prop.slice(0 * nrs->fluid->fieldOffset, mesh->Nlocal);
-  applyOutletViscositySponge(mesh->Nlocal,
-                            freeSurfaceZ,
-                            outletZ,
-                            outletViscosityMultiplier,
-                            mesh->o_z,
-                            o_viscosity);
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -168,16 +156,12 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Froude Number: %.8e\n", Fr);
     printf("Density Ratio: %.8e\n", rhoRatio);
     printf("Viscosity Ratio: %.8e\n", muRatio);
-    printf("Outlet viscosity sponge: z=[%.8e, %.8e], multiplier=1 to %.8e\n",
-           freeSurfaceZ,
-           outletZ,
-           outletViscosityMultiplier);
   }
   lvlSet::solve(time);
 
   //prevent spurious interface above free surface
   auto mesh = nrs->meshV;
-  const dfloat clearThreshold = 5.0 * lvlSet::getInterfaceWidth();
+  const dfloat clearThreshold = 10.0 * lvlSet::getInterfaceWidth();
   auto o_cls = nrs->scalar->o_solution("cls");
   clearAboveFreeSurface(mesh->Nlocal, 
                         freeSurfaceZ + clearThreshold,
@@ -200,8 +184,7 @@ void UDF_ExecuteStep(double time, int tstep)
   // Remove spurious gas/interface structures in the lower peripheral vessel.
   // Interpolate across the annular gap; multiplying the sum of the radii is
   // only correct for the special midpoint value 0.5.
-  const dfloat peripheralRadius = innerShellRadius
-      + peripheralRadiusFraction * (outerShellRadius - innerShellRadius);
+  const dfloat peripheralRadius = innerShellRadius + peripheralRadiusFraction * (outerShellRadius - innerShellRadius);
   clearVolumeBelowInjector(mesh->Nlocal,
                            freeSurfaceZ - 2.0, //clear below this z-threshold
                            peripheralRadius,
