@@ -4,7 +4,7 @@ userSections = tlsr, clsr, lvlset
 startFrom = "ss1.fld"
 polynomialOrder = 5
 stopAt = endTime
-endTime = 40
+endTime = 60
 #stopAt = numSteps
 #numSteps = 100
 
