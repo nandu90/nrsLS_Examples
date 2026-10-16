@@ -23,7 +23,7 @@ equation = navierStokes+variableViscosity
 
 [FLUID VELOCITY]
 boundaryTypeMap = zeroDirichlet, zeroDirichlet, outlet, zeroDirichlet, zeroDirichlet, inlet, zeroDirichlet
-#regularization = svv+scalingCoeff=1.0+filterPower=2.0
+regularization = svv+scalingCoeff=1.0+filterPower=4.0
 residualTol = 1e-6
 
 [FLUID PRESSURE]
@@ -48,7 +48,7 @@ regularization = svv
 solveFrequency = 2e-2
 residualTol = 1e-8
 maximumSteps = 750
-regularization = svv+scalingCoeff=1.0+filterPower=7.0
+regularization = svv+scalingCoeff=2.0+filterPower=7.0
 
 [CLSR]
 solveFrequency = 2e-3
