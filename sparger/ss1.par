@@ -8,7 +8,8 @@ endTime = 60
 #stopAt = numSteps
 #numSteps = 100
 
-dt = initial=1e-06+targetCFL=0.2+max=2e-4
+#dt = initial=1e-06+targetCFL=0.2+max=2e-4
+dt = 1e-4
 
 timeStepper = tombo2
 
