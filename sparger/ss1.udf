@@ -32,6 +32,7 @@ static dfloat surfaceProjectionTolerance = 0.025;
 // Fraction across the annular gap measured from the inner shell toward the
 // outer shell. Nodes at larger radii are cleared by clearVolumeBelowInjector.
 static dfloat peripheralRadiusFraction = 0.85;
+static dfloat vesselBottomZ = -58.736;
 
 void preFluid(double time, int tstep)
 {
@@ -188,6 +189,7 @@ void UDF_ExecuteStep(double time, int tstep)
   clearVolumeBelowInjector(mesh->Nlocal,
                            freeSurfaceZ - 2.0, //clear below this z-threshold
                            peripheralRadius,
+                           vesselBottomZ + 5.0,
                            mesh->o_x,
                            mesh->o_y,
                            mesh->o_z,
@@ -197,6 +199,33 @@ void UDF_ExecuteStep(double time, int tstep)
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
 
   if (cfl > maxCFL || nrs->dt[0] < 1e-8) {
+    auto fluidMesh = nrs->fluid->mesh;
+    auto outputMesh = nrs->meshT;
+    deviceMemory<dfloat> o_cflField(outputMesh->Nlocal);
+    platform->linAlg->fill(outputMesh->Nlocal, 0.0, o_cflField);
+
+    computeNodalCFL(fluidMesh->Nelements,
+                    nrs->dt[0],
+                    nrs->fluid->fieldOffset,
+                    fluidMesh->o_vgeo,
+                    fluidMesh->o_gllz,
+                    nrs->fluid->o_U,
+                    o_cflField);
+
+    std::vector<deviceMemory<dfloat>> cflFields;
+    cflFields.emplace_back(o_cflField);
+    std::vector<std::tuple<std::string, std::vector<deviceMemory<dfloat>>>> cflOutput;
+    cflOutput.emplace_back("scalar00", std::move(cflFields));
+    if (platform->comm.mpiRank() == 0) {
+      printf("CFL limit triggered (max=%.8e, dt=%.8e); writing nodal CFL field\n", cfl, nrs->dt[0]);
+    }
+    nrs->writeToFile("cfl",
+                     time,
+                     outputMesh,
+                     cflOutput,
+                     true,  // include coordinates for direct visualization
+                     true); // write diagnostic field in FP64
+
     nrs->writeCheckpoint(time);
 
     nekrsCheck(true, 

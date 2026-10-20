@@ -17,26 +17,6 @@ void udfDirichlet(bcData *bc)
       bc->sScalar = 1.0;
     } else if(bc->id == 3 || bc->id == 6) {
       bc->sScalar = 0.0;
-    // } else if(bc->id == 4) { // bore bottom
-    //   const dfloat tubeR = 0.5;
-    //   const dfloat tubey = 0.0;
-    //   const dfloat tubex1 = 1.0;
-    //   const dfloat tubex2 = -1.0;
-
-    //   const dfloat dist1 = sqrt(pow(bc->x - tubex1, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
-    //   const dfloat dist2 = sqrt(pow(bc->x - tubex2, 2.0) + pow(bc->y - tubey, 2.0)) - tubeR;
-    //   const dfloat phi = fmin(dist1, dist2);
-
-    //   const dfloat epsilon = bc->usrwrk[0];
-    //   const dfloat theta = phi / (2.0 * epsilon);
-    //   bc->sScalar = 0.5 * (tanh(theta) + 1.0);
-    // } else if(bc->id == 7) { // tube walls
-    //   const dfloat tubeDischargeZ = -52.4367874015748;
-    //   const dfloat phi = tubeDischargeZ - bc->z;
-
-    //   const dfloat epsilon = bc->usrwrk[0];
-    //   const dfloat theta = phi / (2.0 * epsilon);
-    //   bc->sScalar = 0.5 * (tanh(theta) + 1.0);
     }
   }
 }
@@ -88,6 +68,7 @@ void udfDirichlet(bcData *bc)
 @kernel void clearVolumeBelowInjector(const dlong N,
                                       const dfloat injectorZ,
                                       const dfloat radialThreshold,
+                                      const dfloat bottomClearZ,
                                       @ restrict const dfloat *X,
                                       @ restrict const dfloat *Y,
                                       @ restrict const dfloat *Z,
@@ -97,7 +78,11 @@ void udfDirichlet(bcData *bc)
     const dfloat radialThresholdSq = radialThreshold * radialThreshold;
     const dfloat radiusSq = X[n]*X[n] + Y[n]*Y[n];
 
-    if ((Z[n] < injectorZ) && (radiusSq > radialThresholdSq)) {
+    const bool inLowerPeripheralRegion =
+        (Z[n] < injectorZ) && (radiusSq > radialThresholdSq);
+    const bool withinBottomClearance = Z[n] < bottomClearZ;
+
+    if (inLowerPeripheralRegion || withinBottomClearance) {
       PSI[n] = fmax(1.0 - 0.01, PSI[n]);
     }
   }
@@ -117,6 +102,49 @@ void udfDirichlet(bcData *bc)
     const dfloat ramp = eta * eta * (3.0 - 2.0 * eta);
     const dfloat multiplier = 1.0 + (maxMultiplier - 1.0) * ramp;
     viscosity[n] *= multiplier;
+  }
+}
+
+@kernel void computeNodalCFL(const dlong Nelements,
+                             const dfloat dt,
+                             const dlong velocityOffset,
+                             @ restrict const dfloat *vgeo,
+                             @ restrict const dfloat *gllz,
+                             @ restrict const dfloat *U,
+                             @ restrict dfloat *nodalCFL)
+{
+  for (dlong e = 0; e < Nelements; ++e; @outer(0)) {
+    for (int k = 0; k < p_Nq; ++k) {
+      for (int j = 0; j < p_Nq; ++j; @inner(1)) {
+        for (int i = 0; i < p_Nq; ++i; @inner(0)) {
+          const dlong id = e*p_Np + k*p_Nq*p_Nq + j*p_Nq + i;
+          const dlong gid = e*p_Np*p_Nvgeo + k*p_Nq*p_Nq + j*p_Nq + i;
+
+          const dfloat dr = (i == 0) ? gllz[1] - gllz[0] : ((i == p_Nq - 1) ? gllz[p_Nq - 1] - gllz[p_Nq - 2] : 0.5*(gllz[i + 1] - gllz[i - 1]));
+          const dfloat ds = (j == 0) ? gllz[1] - gllz[0] : ((j == p_Nq - 1) ? gllz[p_Nq - 1] - gllz[p_Nq - 2] : 0.5*(gllz[j + 1] - gllz[j - 1]));
+          const dfloat dtRef = (k == 0) ? gllz[1] - gllz[0] : ((k == p_Nq - 1) ? gllz[p_Nq - 1] - gllz[p_Nq - 2] : 0.5*(gllz[k + 1] - gllz[k - 1]));
+
+          const dfloat drdx = vgeo[gid + p_RXID*p_Np];
+          const dfloat drdy = vgeo[gid + p_RYID*p_Np];
+          const dfloat drdz = vgeo[gid + p_RZID*p_Np];
+          const dfloat dsdx = vgeo[gid + p_SXID*p_Np];
+          const dfloat dsdy = vgeo[gid + p_SYID*p_Np];
+          const dfloat dsdz = vgeo[gid + p_SZID*p_Np];
+          const dfloat dtdx = vgeo[gid + p_TXID*p_Np];
+          const dfloat dtdy = vgeo[gid + p_TYID*p_Np];
+          const dfloat dtdz = vgeo[gid + p_TZID*p_Np];
+
+          const dfloat u = U[id + 0*velocityOffset];
+          const dfloat v = U[id + 1*velocityOffset];
+          const dfloat w = U[id + 2*velocityOffset];
+
+          const dfloat cflR = fabs(u*drdx + v*drdy + w*drdz)*dt/dr;
+          const dfloat cflS = fabs(u*dsdx + v*dsdy + w*dsdz)*dt/ds;
+          const dfloat cflT = fabs(u*dtdx + v*dtdy + w*dtdz)*dt/dtRef;
+          nodalCFL[id] = cflR + cflS + cflT;
+        }
+      }
+    }
   }
 }
 
