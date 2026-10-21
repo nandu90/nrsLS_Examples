@@ -36,7 +36,7 @@ Z_SECTION = -52.4367874015748
 
 # Mesh controls. N_CIRC must equal 4*N_SIDE, and N_SIDE must be even. Keep the
 # original tube O-grid resolution; refine only the surrounding radial region.
-N_SIDE = 12
+N_SIDE = 16
 N_CIRC = 4 * N_SIDE
 N_TUBE_RADIAL = 5
 N_SURROUNDING_RADIAL = 8
@@ -48,7 +48,7 @@ SURROUNDING_END_CLUSTERING = 0.25
 # A value of one makes their meeting locations uniformly spaced from -R to R;
 # zero retains the original tan(angle) distribution. Tube points are unchanged.
 CENTER_DIVIDER_SPREAD = 0.75
-N_OUTER_SHELL_RADIAL = 14
+N_OUTER_SHELL_RADIAL = 20
 FIRST_OUTER_SHELL_LAYER = 0.15
 ORDER = 1
 

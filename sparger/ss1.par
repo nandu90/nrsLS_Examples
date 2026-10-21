@@ -1,15 +1,15 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = "ss1.fld"
+#startFrom = "ss1.fld"
 polynomialOrder = 5
 stopAt = endTime
 endTime = 60
 #stopAt = numSteps
 #numSteps = 100
 
-#dt = initial=1e-06+targetCFL=0.2+max=2e-4
-dt = 1e-4
+dt = initial=1e-06+targetCFL=0.2+max=2e-4
+#dt = 1e-4
 
 timeStepper = tombo2
 
@@ -48,13 +48,13 @@ regularization = svv
 [TLSR]
 solveFrequency = 2e-2
 residualTol = 1e-8
-maximumSteps = 1000
+maximumSteps = 750
 regularization = svv+scalingCoeff=2.0+filterPower=7.0
 
 [CLSR]
 solveFrequency = 2e-3
 residualTol = 1e-8
-maximumSteps = 200
+maximumSteps = 100
 
 [LVLSET]
 interfaceWidthFactor = 2.5
