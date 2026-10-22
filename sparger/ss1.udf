@@ -174,7 +174,7 @@ void UDF_ExecuteStep(double time, int tstep)
   clearBoundaryBelowFreeSurface(mesh->Nelements,
                                 2,
                                 freeSurfaceZ,
-                                freeSurfaceZ - clearThreshold,
+                                freeSurfaceZ - 5.0,
                                 lvlSet::getInterfaceWidth(),
                                 mesh->o_vmapM,
                                 mesh->o_EToB,
