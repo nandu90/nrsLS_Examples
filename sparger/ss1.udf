@@ -162,10 +162,9 @@ void UDF_ExecuteStep(double time, int tstep)
 
   //prevent spurious interface above free surface
   auto mesh = nrs->meshV;
-  const dfloat clearThreshold = 10.0 * lvlSet::getInterfaceWidth();
   auto o_cls = nrs->scalar->o_solution("cls");
   clearAboveFreeSurface(mesh->Nlocal, 
-                        freeSurfaceZ + clearThreshold,
+                        freeSurfaceZ + 4.0,
                         mesh->o_z,
                         o_cls);
 
@@ -195,7 +194,7 @@ void UDF_ExecuteStep(double time, int tstep)
                            mesh->o_z,
                            o_cls);
 
-  const dfloat maxCFL = 1.0;
+  const dfloat maxCFL = 2.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
 
   if (cfl > maxCFL || nrs->dt[0] < 1e-8) {
