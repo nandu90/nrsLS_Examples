@@ -189,7 +189,7 @@ void UDF_ExecuteStep(double time, int tstep)
   clearVolumeBelowInjector(mesh->Nlocal,
                            freeSurfaceZ - 2.0, //clear below this z-threshold
                            peripheralRadius,
-                           vesselBottomZ + 5.0,
+                           vesselBottomZ + 2.0,
                            mesh->o_x,
                            mesh->o_y,
                            mesh->o_z,
