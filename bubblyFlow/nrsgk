@@ -1,48 +1,138 @@
 #!/usr/bin/env bash
 
-[ $# -ne 4 ] && echo "nrsgk requires 4 arguments: %job_name% %number_of_gpus% %runtime_hours% %runtime_minutes%" && exit 0;
+if [[ $# -ne 4 ]]; then
+  echo "Usage: nrsgk JOB_NAME NUMBER_OF_GPUS RUNTIME_HOURS RUNTIME_MINUTES"
+  exit 1
+fi
 
+job_name=$1
 ngpus=$2
-[ $ngpus -gt 16 ] && echo "only 16 gpus available" && exit 0;
- 
-if [[ $ngpus -gt 8 ]]; then
+runtime_hours=$3
+runtime_minutes=$4
+
+if ! [[ $ngpus =~ ^[0-9]+$ ]] || (( ngpus < 1 || ngpus > 16 )); then
+  echo "NUMBER_OF_GPUS must be an integer from 1 to 16"
+  exit 1
+fi
+
+if ! [[ $runtime_hours =~ ^[0-9]+$ &&
+        $runtime_minutes =~ ^[0-9]+$ ]] ||
+   (( runtime_minutes > 59 )); then
+  echo "RUNTIME_HOURS and RUNTIME_MINUTES must be nonnegative integers; minutes must be below 60"
+  exit 1
+fi
+
+if (( ngpus > 8 )); then
   nnodes=2
-  res=$(( $ngpus % 2 ))
-  [ $res -ne 0 ] && ngpus=$(($ngpus+1))
-  ntpn=$(( $ngpus / 2 ))
+
+  if (( ngpus % 2 != 0 )); then
+    ngpus=$((ngpus + 1))
+    echo "GPU count rounded up to $ngpus for even two-node placement"
+  fi
+
+  ntpn=$((ngpus / 2))
 else
   nnodes=1
   ntpn=$ngpus
 fi
 
-export NEKRS_HOME=/home/$USER/.local/nekrs
+printf -v runtime "%02d:%02d" \
+  "$runtime_hours" "$runtime_minutes"
 
-printf -v tme "%0.2d:%0.2d" $3 $4 
-echo "submitting job \"$1\" on $(($nnodes * $ntpn)) gpus for $tme"
+batch_file="${job_name}.batch"
 
-echo   "#!/bin/bash"                                >  $1.batch
-echo   "#SBATCH --nodes=$nnodes"                    >> $1.batch
-echo   "#SBATCH --ntasks-per-node=$ntpn"            >> $1.batch
-echo   "#SBATCH --gres=gpu:$ntpn"                   >> $1.batch
-echo   "#SBATCH --time="$tme":00"                   >> $1.batch
-echo   "#SBATCH -p gpu"                             >> $1.batch
-echo   "#SBATCH -o $1.%A.log"                       >> $1.batch
-echo   "module purge"                               >> $1.batch
-echo   "module load gcc/11.2.1"                     >> $1.batch
-echo   "module load cmake/cmake-3.26.4"                     >> $1.batch
-echo   "module load cuda/12.4"                      >> $1.batch
-echo   "module load openmpi/5.0.3/gcc/5.0.3-cuda12.4-rpm" >> $1.batch
-echo   "echo" $1 ">" SESSION.NAME                   >> $1.batch #still useful for visnek/etc.
-echo   rm -f logfile                                >> $1.batch
-echo   rm -f  *.sch                                 >> $1.batch
-echo   rm -f ioinfo                                 >> $1.batch
-echo   touch $1.\$SLURM_JOBID.log                   >> $1.batch
-echo   ln -s $1.\$SLURM_JOBID.log logfile           >> $1.batch
-echo   "module list >> logfile"                     >> $1.batch
-echo   "which mpicc >> logfile"                     >> $1.batch
-echo   "echo \$SLURM_NODELIST >> logfile"           >> $1.batch
-echo   "mpirun -v $NEKRS_HOME/bin/nekrs --setup $1" >> $1.batch
-echo   "exit 0;"                                    >> $1.batch
-sbatch $1.batch
+cat > "$batch_file" <<EOF
+#!/usr/bin/env bash
+#SBATCH --job-name=$job_name
+#SBATCH --nodes=$nnodes
+#SBATCH --ntasks-per-node=$ntpn
+#SBATCH --gres=gpu:$ntpn
+#SBATCH --time=${runtime}:00
+#SBATCH --partition=gpu
+#SBATCH --output=${job_name}.%A.log
+
+module purge
+module load gcc/11.2.1
+module load cmake/cmake-3.26.4
+module load cuda/12.4
+module load openmpi/5.0.3/gcc/5.0.3-cuda12.4-rpm
+
+export NEKRS_HOME=/home/\$USER/.local/nekrs
+
+# Remove unintended MPI/UCX overrides supplied by login startup files.
+unset OMPI_MCA_btl_openib_allow_ib
+unset OMPI_MCA_btl_openib_warn_no_device_params_found
+unset OMPI_MCA_pml
+unset OMPI_MCA_btl
+unset UCX_TLS
+unset UCX_NET_DEVICES
+
+export PSM2_CUDA=0
+export OMPI_MCA_osc=^ucx
+export OMPI_MCA_io=^ompio
+
+# Required for large NekRS restart-read buffers.
+if ! ulimit -s unlimited; then
+  echo "ERROR: Unable to set an unlimited stack size" >&2
+  exit 1
+fi
+
+echo "$job_name" > SESSION.NAME
+
+rm -f logfile ./*.sch ioinfo
+ln -s "${job_name}.\${SLURM_JOB_ID}.log" logfile
+
+echo "===== NEKRS BUILD/RUNTIME DIAGNOSTICS ====="
+date
+hostname
+
+echo "Nodes: \$SLURM_NODELIST"
+echo "MPI tasks: $ngpus"
+echo "Soft stack limit: \$(ulimit -Ss)"
+echo "Hard stack limit: \$(ulimit -Hs)"
+
+echo "===== MODULES ====="
+module list 2>&1
+
+echo "===== COMPILERS ====="
+command -v gcc
+gcc --version | head -n 1
+
+command -v g++
+g++ --version | head -n 1
+
+command -v mpicc
+mpicc --showme
+
+command -v mpicxx
+mpicxx --showme
+
+echo "===== MPI/CUDA LINKAGE ====="
+command -v mpirun
+readlink -f "\$(command -v mpirun)"
+mpirun --version
+
+command -v nvcc
+nvcc --version
+
+ldd "\$NEKRS_HOME/bin/nekrs" |
+  egrep -i 'libmpi|open-pal|pmix|ucx|psm|cuda'
+
+echo "===== STARTING NEKRS ====="
+
+mpirun -np $ngpus -v \
+  "\$NEKRS_HOME/bin/nekrs" \
+  --setup "$job_name"
+
+nekrs_status=\$?
+
+echo "NekRS exit status: \$nekrs_status"
+exit "\$nekrs_status"
+EOF
+
+echo "Submitting \"$job_name\" on $ngpus GPUs for $runtime"
+
+sbatch "$batch_file"
+
 sleep 3
-squeue -u `whoami`
+squeue -u "$(whoami)"

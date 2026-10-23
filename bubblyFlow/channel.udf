@@ -19,7 +19,7 @@ static const dfloat Eo = 0.9;
 static const dfloat Archimedes = 2.43e4;
 static const dfloat bubbleRad = 0.15;
 static const dfloat Fr = Re*Re*bubbleRad*bubbleRad*bubbleRad/Archimedes;
-static const dfloat We = Eo*Fr/(bubbleRad*bubbleRad);
+static const dfloat We = Eo*Fr/(bubbleRad*bubbleRad); //for startup
 // Saturated water/steam properties at 7 MPa and 285.83 C. Ratios are
 // liquid/gas; Pr is based on the saturated-liquid properties.
 static const dfloat rhoRatio = 20.25254;
@@ -40,7 +40,7 @@ void initializeBubbleFields()
   auto mesh = nrs->meshV;
 
   auto o_cls = nrs->scalar->o_solution("cls");
-  auto o_tls = nrs->scalar->o_solution("cls");
+  auto o_tls = nrs->scalar->o_solution("tls");
 
   const dfloat bubbleVolume = 4.0/3.0*M_PI*pow(bubbleRad, 3.0);
   const int numberBubbles = voidFraction*mesh->volume/bubbleVolume;
@@ -171,15 +171,20 @@ void preFluid(double time, int tstep)
   auto o_fx = o_forceAcc.slice(0*nrs->fluid->fieldOffset, mesh->Nlocal);
   platform->linAlg->add(mesh->Nlocal, -1.0 / Fr, o_fx);
 
-  dfloat dpdx = rhol / Fr; //to maintain Re_tau
+  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
+  const dfloat rhoMean = platform->linAlg->innerProd(
+      mesh->Nlocal,
+      mesh->o_LMM,
+      o_rho,
+      platform->comm.mpiComm())/mesh->volume;
+
+  dfloat dpdx = rhoMean / Fr;
 
   if (platform->options.compareArgs("CONSTANT FLOW RATE", "FALSE")) {
     dpdx += 4.0 * rhol * Ubulk * pow(Re_tau / Re, 2.0);
   }
 
   auto o_dpdx = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
-  auto o_rho = nrs->fluid->o_prop.slice(1 * nrs->fluid->fieldOffset, mesh->Nlocal);
-
   platform->linAlg->adyz(mesh->Nlocal, dpdx, o_rho, o_dpdx);
 
   platform->linAlg->axpby(mesh->Nlocal, 1.0, o_dpdx, 1.0, o_fx);
@@ -203,6 +208,7 @@ void preFluid(double time, int tstep)
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING UNSPLIT STEPS", "20");
   //options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }

@@ -1,9 +1,10 @@
-#pragma once
+#ifndef POST_PROCESSING_INC
+#define POST_PROCESSING_INC
 
 #include "yp.inc"
 #include "lvlSetDiagnostics.inc"
 
-static const bool collectAvg = false;
+static const bool collectAvg = true;
 
 static constexpr int numberElementsX = 64;
 static constexpr int numberElementsY = 32;
@@ -63,11 +64,20 @@ static const std::array<const char *, numberOfBudgetDiagnosticFields>
 
 dfloat activePressureGradient()
 {
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+  auto o_rho = nrs->fluid->o_prop.slice(offset, mesh->Nlocal);
+  const dfloat rhoMean = platform->linAlg->innerProd(
+      mesh->Nlocal,
+      mesh->o_LMM,
+      o_rho,
+      platform->comm.mpiComm())/mesh->volume;
+
   if (platform->options.compareArgs("CONSTANT FLOW RATE", "TRUE")) {
-    return rhol/Fr + nrs->flowRateScaleFactor();
+    return rhoMean/Fr + nrs->flowRateScaleFactor();
   }
 
-  return 4.0*rhol*Ubulk*pow(Re_tau/Re, 2.0) + rhol/Fr;
+  return 4.0*rhol*Ubulk*pow(Re_tau/Re, 2.0) + rhoMean/Fr;
 }
 
 void writeBudgetProfiles(const dfloat time)
@@ -227,7 +237,7 @@ void postProcessingSetup(const bool restarting,
                              comm_t::op::sum,
                              platform->comm.mpiComm());
     profileY.resize(numberProfilePoints);
-    o_profileInstant.copyTo(profileY);
+    o_profileInstant.copyTo(profileY, numberProfilePoints);
 
     if (platform->comm.mpiRank() == 0) {
       budgetProfileFile = fopen("budgetProfiles.dat", "w");
@@ -343,7 +353,7 @@ struct TemperatureStatistics
   dfloat nusseltFullGap;
 };
 
-TemperatureStatistics temperatureStatistics()
+TemperatureStatistics temperatureStatistics(const dfloat bulkVelocity)
 {
   auto mesh = nrs->scalar->mesh("temperature");
   const auto offset = nrs->fluid->fieldOffset;
@@ -433,11 +443,12 @@ TemperatureStatistics temperatureStatistics()
   dfloat stanton = 0.0;
   dfloat nusseltHalfGap = 0.0;
   dfloat nusseltFullGap = 0.0;
-  if (wallToBulk > 1.0e-14) {
+  if (wallToBulk > 1.0e-14 && fabs(bulkVelocity) > 1.0e-14) {
     // Unit wall heat flux and T scale q_w/(rho_l*cp_l*Ub) give
-    // St = 1/(Tw-Tb). Re uses the full gap, so Nu_H = Re*Pr*St.
-    stanton = 1.0/wallToBulk;
-    nusseltFullGap = Re*Pr*stanton;
+    // St = 1/[Ub*(Tw-Tb)]. With Re based on the reference velocity,
+    // Re_b = Re*Ub and Nu_H = Re_b*Pr*St.
+    stanton = 1.0/(bulkVelocity*wallToBulk);
+    nusseltFullGap = Re*bulkVelocity*Pr*stanton;
     nusseltHalfGap = 0.5*nusseltFullGap;
   }
 
@@ -494,7 +505,7 @@ void monitorFlow(const dfloat time, const int tstep)
                                   mesh->o_LMM,
                                   o_specificEnergy,
                                   platform->comm.mpiComm())/mesh->volume;
-  const auto thermal = temperatureStatistics();
+  const auto thermal = temperatureStatistics(bulkVelocity[0]);
 
   if (platform->comm.mpiRank() == 0) {
     printf("CHANNEL mode=%s forcing=%s  t=% .6e  Ub=% .6e  utau=% .6e  "
@@ -635,3 +646,5 @@ void postProcessingPostLS(const dfloat time, const int tstep)
 {
   monitorFlow(time, tstep);
 }
+
+#endif // POST_PROCESSING_INC
