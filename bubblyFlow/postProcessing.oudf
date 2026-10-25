@@ -59,28 +59,3 @@
     BUDGET[n + 24*offset] = rho*uz;
   }
 }
-
-@kernel void extractPlanarProfile(const int Nq,
-                                  const int Np,
-                                  const int numberElementsY,
-                                  const int numberFields,
-                                  const dlong offset,
-                                  @ restrict const dlong *PROFILEELEMENT,
-                                  @ restrict const dfloat *PLANAR,
-                                  @ restrict dfloat *PROFILE)
-{
-  for (int ey = 0; ey < numberElementsY; ++ey; @outer(0)) {
-    const dlong element = PROFILEELEMENT[ey];
-    for (int j = 0; j < Nq; ++j; @inner(0)) {
-      const int point = ey*Nq + j;
-      for (int field = 0; field < numberFields; ++field) {
-        dfloat value = 0.0;
-        if (element >= 0) {
-          const dlong node = element*Np + j*Nq;
-          value = PLANAR[field*offset + node];
-        }
-        PROFILE[field*(numberElementsY*Nq) + point] = value;
-      }
-    }
-  }
-}

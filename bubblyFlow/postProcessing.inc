@@ -3,22 +3,23 @@
 
 #include "yp.inc"
 #include "lvlSetDiagnostics.inc"
+#include "pointInterpolation.hpp"
+#include <algorithm>
 
 static const bool collectAvg = true;
-
-static constexpr int numberElementsX = 64;
-static constexpr int numberElementsY = 32;
-static constexpr int numberElementsZ = 40;
 
 static FILE *bubblyFile = nullptr;
 static FILE *budgetProfileFile = nullptr;
 static bool twoPhaseMonitorsEnabled = false;
+static constexpr int numberProfilePoints = 100;
 static dfloat referenceGasVolume = 0.0;
 static deviceMemory<dfloat> o_surfaceTensionAcceleration;
 static deviceMemory<dfloat> o_budgetDiagnosticFields;
 static deviceMemory<dfloat> o_profileInstant;
 static deviceMemory<dfloat> o_profileAverage;
-static deviceMemory<dlong> o_profileElement;
+static deviceMemory<dfloat> o_profilePlaneWeights;
+static oogs_t *profilePlaneOogs = nullptr;
+static pointInterpolation_t *profileInterpolator = nullptr;
 static std::vector<dfloat> profileY;
 static dfloat profileAveragingTime = 0.0;
 static dfloat previousProfileTime = 0.0;
@@ -62,6 +63,111 @@ static const std::array<const char *, numberOfBudgetDiagnosticFields>
         "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
         "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW"};
 
+void setupCoordinateBasedProfiles()
+{
+  auto mesh = nrs->meshV;
+  const auto comm = platform->comm.mpiComm();
+  const int rank = platform->comm.mpiRank();
+
+  std::vector<dfloat> localY(mesh->Nlocal);
+  mesh->o_y.copyTo(localY.data(), mesh->Nlocal);
+
+  const dfloat ymin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_y, comm);
+  const dfloat ymax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_y, comm);
+  const dfloat yTolerance =
+      1.0e-10*std::max<dfloat>(1.0, fabs(ymax - ymin));
+
+  // Every node at the same physical y location receives the same gather ID.
+  // This does not depend on global element numbering and therefore remains
+  // valid for both ordinary box meshes and runtime h-refinement.
+  std::vector<hlong> planeId(mesh->Nlocal);
+  for (dlong node = 0; node < mesh->Nlocal; ++node) {
+    const hlong id =
+        static_cast<hlong>(llround((localY[node] - ymin)/yTolerance)) + 1;
+    planeId[node] = id;
+  }
+
+  auto planeOgs = ogsSetup(mesh->Nlocal,
+                           planeId.data(),
+                           comm,
+                           1,
+                           platform->device.occaDevice());
+  profilePlaneOogs = oogs::setup(planeOgs,
+                                 numberOfBudgetDiagnosticFields,
+                                 nrs->fluid->fieldOffset,
+                                 ogsDfloat,
+                                 NULL,
+                                 OOGS_AUTO);
+
+  // LMM/sum_plane(LMM) supplies the x-z quadrature weight. The wall-normal
+  // contribution cancels within a constant-y plane for this channel mesh.
+  o_profilePlaneWeights.resize(mesh->Nlocal);
+  o_profilePlaneWeights.copyFrom(mesh->o_LMM, mesh->Nlocal);
+  oogs::startFinish(o_profilePlaneWeights,
+                    1,
+                    mesh->Nlocal,
+                    ogsDfloat,
+                    ogsAdd,
+                    profilePlaneOogs);
+  platform->linAlg->ady(mesh->Nlocal, 1.0, o_profilePlaneWeights);
+  platform->linAlg->axmy(mesh->Nlocal,
+                         1.0,
+                         mesh->o_LMM,
+                         o_profilePlaneWeights);
+
+  // NekRS performs element location and high-order spectral interpolation of
+  // the planar-averaged fields at the fixed wall-normal output locations.
+  const dfloat xmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_x, comm);
+  const dfloat xmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_x, comm);
+  const dfloat zmin = platform->linAlg->min(
+      mesh->Nlocal, mesh->o_z, comm);
+  const dfloat zmax = platform->linAlg->max(
+      mesh->Nlocal, mesh->o_z, comm);
+  profileY.resize(numberProfilePoints);
+  std::vector<dfloat> profileX;
+  std::vector<dfloat> interpolationY;
+  std::vector<dfloat> profileZ;
+  const dfloat pi = acos(-1.0);
+  for (int point = 0; point < numberProfilePoints; ++point) {
+    const dfloat fraction =
+        static_cast<dfloat>(point)/(numberProfilePoints - 1);
+    profileY[point] = 0.5*(ymin + ymax)
+                    - 0.5*(ymax - ymin)*cos(pi*fraction);
+    if (rank == 0) {
+      profileX.push_back(0.5*(xmin + xmax));
+      interpolationY.push_back(profileY[point]);
+      profileZ.push_back(0.5*(zmin + zmax));
+    }
+  }
+  profileInterpolator = new pointInterpolation_t(mesh, comm);
+  profileInterpolator->setPoints(profileX, interpolationY, profileZ);
+  profileInterpolator->find(pointInterpolation_t::VerbosityLevel::None);
+
+}
+
+void coordinateBasedPlanarAverage(occa::memory& o_fields)
+{
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+  for (int field = 0; field < numberOfBudgetDiagnosticFields; ++field) {
+    auto o_field = o_fields.slice(field*offset, mesh->Nlocal);
+    platform->linAlg->axmy(mesh->Nlocal,
+                           1.0,
+                           o_profilePlaneWeights,
+                           o_field);
+  }
+  oogs::startFinish(o_fields,
+                    numberOfBudgetDiagnosticFields,
+                    offset,
+                    ogsDfloat,
+                    ogsAdd,
+                    profilePlaneOogs);
+}
+
 dfloat activePressureGradient()
 {
   auto mesh = nrs->meshV;
@@ -86,7 +192,6 @@ void writeBudgetProfiles(const dfloat time)
     return;
   }
 
-  const int numberProfilePoints = numberElementsY*nrs->meshV->Nq;
   std::vector<dfloat> values(
       numberOfBudgetDiagnosticFields*numberProfilePoints);
   o_profileAverage.copyTo(values);
@@ -204,40 +309,13 @@ void postProcessingSetup(const bool restarting,
 
   if (twoPhaseMonitorsEnabled && collectAvg) {
     const auto offset = nrs->fluid->fieldOffset;
-    const int numberProfilePoints = numberElementsY*mesh->Nq;
-    nekrsCheck(mesh->NelementsGlobal !=
-                   numberElementsX*numberElementsY*numberElementsZ,
-               platform->comm.mpiComm(),
-               EXIT_FAILURE,
-               "%s",
-               "channel.box and UDF element counts are inconsistent");
+    setupCoordinateBasedProfiles();
     o_surfaceTensionAcceleration.resize(nrs->fluid->fieldOffsetSum);
     o_budgetDiagnosticFields.resize(numberOfBudgetDiagnosticFields*offset);
     o_profileInstant.resize(numberOfBudgetDiagnosticFields*numberProfilePoints);
     o_profileAverage.resize(numberOfBudgetDiagnosticFields*numberProfilePoints);
-    o_profileElement.resize(numberElementsY);
+    platform->linAlg->fill(o_profileInstant.size(), 0.0, o_profileInstant);
     platform->linAlg->fill(o_profileAverage.size(), 0.0, o_profileAverage);
-
-    std::vector<dlong> profileElement(numberElementsY, -1);
-    for (int element = 0; element < mesh->Nelements; ++element) {
-      const dlong globalElement = nek::localElementIdToGlobal(element);
-      const int ex = globalElement % numberElementsX;
-      const int ey = (globalElement/numberElementsX) % numberElementsY;
-      const int ez = globalElement/(numberElementsX*numberElementsY);
-      if (ex == 0 && ez == 0) {
-        profileElement[ey] = element;
-      }
-    }
-    o_profileElement.copyFrom(profileElement.data(), profileElement.size());
-
-    extractPlanarProfile(mesh->Nq, mesh->Np, numberElementsY, 1, offset,
-                         o_profileElement, mesh->o_y, o_profileInstant);
-    platform->comm.allreduce(o_profileInstant,
-                             numberProfilePoints,
-                             comm_t::op::sum,
-                             platform->comm.mpiComm());
-    profileY.resize(numberProfilePoints);
-    o_profileInstant.copyTo(profileY, numberProfilePoints);
 
     if (platform->comm.mpiRank() == 0) {
       budgetProfileFile = fopen("budgetProfiles.dat", "w");
@@ -292,29 +370,13 @@ void collectBudgetProfiles(const dfloat time)
       o_budgetDiagnosticFields);
 
   if (nrs->timeStepConverged) {
-    planarAvg(mesh,
-              "xz",
-              numberElementsX,
-              numberElementsY,
-              numberElementsZ,
-              numberOfBudgetDiagnosticFields,
-              offset,
-              o_budgetDiagnosticFields);
+    coordinateBasedPlanarAverage(o_budgetDiagnosticFields);
 
-    const int numberProfilePoints = numberElementsY*mesh->Nq;
-    extractPlanarProfile(mesh->Nq,
-                         mesh->Np,
-                         numberElementsY,
-                         numberOfBudgetDiagnosticFields,
-                         offset,
-                         o_profileElement,
-                         o_budgetDiagnosticFields,
-                         o_profileInstant);
-    platform->comm.allreduce(
-        o_profileInstant,
-        numberOfBudgetDiagnosticFields*numberProfilePoints,
-        comm_t::op::sum,
-        platform->comm.mpiComm());
+    profileInterpolator->eval(numberOfBudgetDiagnosticFields,
+                              offset,
+                              o_budgetDiagnosticFields,
+                              numberProfilePoints,
+                              o_profileInstant);
 
     if (firstProfileSample) {
       previousProfileTime = time;
