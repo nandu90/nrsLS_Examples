@@ -1,8 +1,8 @@
 userSections = tlsr, clsr, lvlset
 
 [GENERAL]
-startFrom = "singlePhase.fld" + time = 0
-polynomialOrder = 7
+startFrom = "channel.fld"
+polynomialOrder = 9
 stopAt = endTime
 endTime = 100
 #stopAt = numSteps
@@ -12,7 +12,7 @@ dt = initial=1.0e-5+targetCFL=0.2+max=1.0e-3
 timeStepper = tombo2
 
 checkpointControl = simulationTime
-checkPointInterval = 10.0
+checkPointInterval = 0.1
 
 scalars = temperature, tls, cls
 
@@ -36,7 +36,7 @@ residualTol = 1e-6
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR TLS]
-solver = none
+#solver = none
 boundaryTypeMap = zeroNeumann
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -44,7 +44,7 @@ residualTol = 1e-8
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [SCALAR CLS]
-solver = none
+#solver = none
 boundaryTypeMap = udfDirichlet
 transportCoeff = 1.0
 diffusionCoeff = 1e-10
@@ -52,12 +52,12 @@ residualTol = 1e-8
 regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [TLSR]
-solver = none
+#solver = none
 solveFrequency = 0.02
 residualTol = 1e-8
 
 [CLSR]
-solver = none
+#solver = none
 boundaryTypeMap = zeroNeumann
 solveFrequency = 0.002
 residualTol = 1e-8

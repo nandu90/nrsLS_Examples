@@ -10,6 +10,10 @@
 
 #endif
 
+// Set true to discard the restart's phase fields and regenerate TLS/CLS.
+// Velocity, pressure, and temperature still come from the restart.
+static const bool initializeBubbles = false;
+
 // ATH reference targets. The bubble diameter is d=0.3*delta, hence
 // d/(2*delta)=0.15 for the full-gap length used by Re, We, and Fr.
 static const dfloat Re = 5600.0;
@@ -245,8 +249,9 @@ void UDF_Setup()
     platform->linAlg->fill(mesh->Nlocal, 0.0, o_temperature);
   }
 
-  // Seed bubbles only on a fresh run. Every restart preserves its TLS/CLS.
-  const bool initializedBubbles = !restarting;
+  // Fresh runs always need phase fields. On restart, initializeBubbles=true
+  // replaces only TLS/CLS while retaining all other restarted fields.
+  const bool initializedBubbles = !restarting || initializeBubbles;
   if (initializedBubbles) {
     initializeBubbleFields();
   }
