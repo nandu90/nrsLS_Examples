@@ -12,13 +12,15 @@ static FILE *bubblyFile = nullptr;
 static FILE *budgetProfileFile = nullptr;
 static bool twoPhaseMonitorsEnabled = false;
 static constexpr int numberProfilePoints = 100;
+static int numberNativeProfilePoints = 0;
 static dfloat referenceGasVolume = 0.0;
 static deviceMemory<dfloat> o_surfaceTensionAcceleration;
 static deviceMemory<dfloat> o_budgetDiagnosticFields;
 static deviceMemory<dfloat> o_profileInstant;
 static deviceMemory<dfloat> o_profileAverage;
+static deviceMemory<dlong> o_profilePlaneIndex;
 static deviceMemory<dfloat> o_profilePlaneWeights;
-static oogs_t *profilePlaneOogs = nullptr;
+static deviceMemory<dfloat> o_nativePlaneAverage;
 static pointInterpolation_t *profileInterpolator = nullptr;
 static std::vector<dfloat> profileY;
 static dfloat profileAveragingTime = 0.0;
@@ -79,43 +81,74 @@ void setupCoordinateBasedProfiles()
   const dfloat yTolerance =
       1.0e-10*std::max<dfloat>(1.0, fabs(ymax - ymin));
 
-  // Every node at the same physical y location receives the same gather ID.
+  // Every node at the same physical y location receives the same plane key.
   // This does not depend on global element numbering and therefore remains
   // valid for both ordinary box meshes and runtime h-refinement.
   std::vector<hlong> planeId(mesh->Nlocal);
+  std::vector<hlong> localPlaneIds;
+  localPlaneIds.reserve(mesh->Nlocal);
   for (dlong node = 0; node < mesh->Nlocal; ++node) {
     const hlong id =
         static_cast<hlong>(llround((localY[node] - ymin)/yTolerance)) + 1;
     planeId[node] = id;
+    localPlaneIds.push_back(id);
   }
 
-  auto planeOgs = ogsSetup(mesh->Nlocal,
-                           planeId.data(),
-                           comm,
-                           1,
-                           platform->device.occaDevice());
-  profilePlaneOogs = oogs::setup(planeOgs,
-                                 numberOfBudgetDiagnosticFields,
-                                 nrs->fluid->fieldOffset,
-                                 ogsDfloat,
-                                 NULL,
-                                 OOGS_AUTO);
+  std::sort(localPlaneIds.begin(), localPlaneIds.end());
+  localPlaneIds.erase(
+      std::unique(localPlaneIds.begin(), localPlaneIds.end()),
+      localPlaneIds.end());
+  const int size = platform->comm.mpiCommSize();
+  const int localCount = static_cast<int>(localPlaneIds.size());
+  std::vector<int> counts(size, 0);
+  MPI_Allgather(&localCount, 1, MPI_INT,
+                counts.data(), 1, MPI_INT, comm);
+  std::vector<int> displacements(size, 0);
+  for (int r = 1; r < size; ++r) {
+    displacements[r] = displacements[r - 1] + counts[r - 1];
+  }
+  const int gatheredCount = displacements.back() + counts.back();
+  std::vector<hlong> globalPlaneIds(gatheredCount);
+  MPI_Allgatherv(localPlaneIds.data(), localCount, MPI_HLONG,
+                 globalPlaneIds.data(), counts.data(), displacements.data(),
+                 MPI_HLONG, comm);
+  std::sort(globalPlaneIds.begin(), globalPlaneIds.end());
+  globalPlaneIds.erase(
+      std::unique(globalPlaneIds.begin(), globalPlaneIds.end()),
+      globalPlaneIds.end());
+  numberNativeProfilePoints = static_cast<int>(globalPlaneIds.size());
+
+  std::vector<dlong> planeIndex(mesh->Nlocal);
+  for (dlong node = 0; node < mesh->Nlocal; ++node) {
+    planeIndex[node] = std::lower_bound(globalPlaneIds.begin(),
+                                        globalPlaneIds.end(),
+                                        planeId[node])
+                     - globalPlaneIds.begin();
+  }
+  o_profilePlaneIndex.resize(mesh->Nlocal);
+  o_profilePlaneIndex.copyFrom(planeIndex.data(), planeIndex.size());
 
   // LMM/sum_plane(LMM) supplies the x-z quadrature weight. The wall-normal
   // contribution cancels within a constant-y plane for this channel mesh.
   o_profilePlaneWeights.resize(mesh->Nlocal);
-  o_profilePlaneWeights.copyFrom(mesh->o_LMM, mesh->Nlocal);
-  oogs::startFinish(o_profilePlaneWeights,
-                    1,
-                    mesh->Nlocal,
-                    ogsDfloat,
-                    ogsAdd,
-                    profilePlaneOogs);
-  platform->linAlg->ady(mesh->Nlocal, 1.0, o_profilePlaneWeights);
-  platform->linAlg->axmy(mesh->Nlocal,
-                         1.0,
-                         mesh->o_LMM,
-                         o_profilePlaneWeights);
+  auto o_planeWeightSum =
+      platform->deviceMemoryPool.reserve<dfloat>(numberNativeProfilePoints);
+  platform->linAlg->fill(numberNativeProfilePoints, 0.0, o_planeWeightSum);
+  accumulateProfilePlaneWeights(mesh->Nlocal,
+                                o_profilePlaneIndex,
+                                mesh->o_LMM,
+                                o_planeWeightSum);
+  platform->comm.allreduce(o_planeWeightSum,
+                           numberNativeProfilePoints,
+                           comm_t::op::sum,
+                           comm);
+  normalizeProfilePlaneWeights(mesh->Nlocal,
+                               o_profilePlaneIndex,
+                               o_planeWeightSum,
+                               mesh->o_LMM,
+                               o_profilePlaneWeights);
+  o_nativePlaneAverage.resize(
+      numberOfBudgetDiagnosticFields*numberNativeProfilePoints);
 
   // NekRS performs element location and high-order spectral interpolation of
   // the planar-averaged fields at the fixed wall-normal output locations.
@@ -153,19 +186,28 @@ void coordinateBasedPlanarAverage(occa::memory& o_fields)
 {
   auto mesh = nrs->meshV;
   const auto offset = nrs->fluid->fieldOffset;
-  for (int field = 0; field < numberOfBudgetDiagnosticFields; ++field) {
-    auto o_field = o_fields.slice(field*offset, mesh->Nlocal);
-    platform->linAlg->axmy(mesh->Nlocal,
-                           1.0,
-                           o_profilePlaneWeights,
-                           o_field);
-  }
-  oogs::startFinish(o_fields,
-                    numberOfBudgetDiagnosticFields,
-                    offset,
-                    ogsDfloat,
-                    ogsAdd,
-                    profilePlaneOogs);
+  platform->linAlg->fill(o_nativePlaneAverage.size(),
+                         0.0,
+                         o_nativePlaneAverage);
+  accumulateProfilePlaneFields(mesh->Nlocal,
+                               offset,
+                               numberNativeProfilePoints,
+                               numberOfBudgetDiagnosticFields,
+                               o_profilePlaneIndex,
+                               o_profilePlaneWeights,
+                               o_fields,
+                               o_nativePlaneAverage);
+  platform->comm.allreduce(o_nativePlaneAverage,
+                           o_nativePlaneAverage.size(),
+                           comm_t::op::sum,
+                           platform->comm.mpiComm());
+  scatterProfilePlaneFields(mesh->Nlocal,
+                            offset,
+                            numberNativeProfilePoints,
+                            numberOfBudgetDiagnosticFields,
+                            o_profilePlaneIndex,
+                            o_nativePlaneAverage,
+                            o_fields);
 }
 
 dfloat activePressureGradient()

@@ -59,3 +59,63 @@
     BUDGET[n + 24*offset] = rho*uz;
   }
 }
+
+@kernel void accumulateProfilePlaneWeights(
+    const dlong N,
+    @ restrict const dlong *PLANEINDEX,
+    @ restrict const dfloat *LMM,
+    @ restrict dfloat *PLANESUM)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    @atomic PLANESUM[PLANEINDEX[n]] += LMM[n];
+  }
+}
+
+@kernel void normalizeProfilePlaneWeights(
+    const dlong N,
+    @ restrict const dlong *PLANEINDEX,
+    @ restrict const dfloat *PLANESUM,
+    @ restrict const dfloat *LMM,
+    @ restrict dfloat *WEIGHT)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    WEIGHT[n] = LMM[n]/PLANESUM[PLANEINDEX[n]];
+  }
+}
+
+@kernel void accumulateProfilePlaneFields(
+    const dlong N,
+    const dlong offset,
+    const int numberPlanes,
+    const int numberFields,
+    @ restrict const dlong *PLANEINDEX,
+    @ restrict const dfloat *WEIGHT,
+    @ restrict const dfloat *FIELDS,
+    @ restrict dfloat *PLANEAVERAGE)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dlong plane = PLANEINDEX[n];
+    for (int field = 0; field < numberFields; ++field) {
+      @atomic PLANEAVERAGE[field*numberPlanes + plane] +=
+          WEIGHT[n]*FIELDS[field*offset + n];
+    }
+  }
+}
+
+@kernel void scatterProfilePlaneFields(
+    const dlong N,
+    const dlong offset,
+    const int numberPlanes,
+    const int numberFields,
+    @ restrict const dlong *PLANEINDEX,
+    @ restrict const dfloat *PLANEAVERAGE,
+    @ restrict dfloat *FIELDS)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dlong plane = PLANEINDEX[n];
+    for (int field = 0; field < numberFields; ++field) {
+      FIELDS[field*offset + n] =
+          PLANEAVERAGE[field*numberPlanes + plane];
+    }
+  }
+}
