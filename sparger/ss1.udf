@@ -73,7 +73,7 @@ void UDF_Setup0(MPI_Comm comm, setupAide &options)
 {
   options.setArgs("FLUID PRESSURE RHO SPLITTING", "TRUE");
   options.setArgs("FLUID PRESSURE RHO SPLITTING FILTER", "TRUE");
-  options.setArgs("FLUID PRESSURE RHO SPLITTING UNSPLIT STEPS", "20");
+  options.setArgs("FLUID PRESSURE RHO SPLITTING UNSPLIT STEPS", "30");
   options.setArgs("FLUID PRESSURE ELLIPTIC COEFF FIELD", "TRUE");
 }
 
@@ -174,7 +174,17 @@ void UDF_ExecuteStep(double time, int tstep)
   clearBoundaryBelowFreeSurface(mesh->Nelements,
                                 2,
                                 freeSurfaceZ,
-                                freeSurfaceZ - 5.0,
+                                freeSurfaceZ - 1.0,
+                                lvlSet::getInterfaceWidth(),
+                                mesh->o_vmapM,
+                                mesh->o_EToB,
+                                mesh->o_z,
+                                o_cls);
+
+  clearBoundaryAboveFreeSurface(mesh->Nelements,
+                                2,
+                                freeSurfaceZ,
+                                freeSurfaceZ + 1.0,
                                 lvlSet::getInterfaceWidth(),
                                 mesh->o_vmapM,
                                 mesh->o_EToB,
@@ -193,7 +203,7 @@ void UDF_ExecuteStep(double time, int tstep)
                            mesh->o_y,
                            mesh->o_z,
                            o_cls);
-
+#if 1
   const dfloat maxCFL = 2.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);
 
@@ -233,4 +243,5 @@ void UDF_ExecuteStep(double time, int tstep)
                "%s\n",
                "CFL > 1.0 || dt < 1e-8!");
   }
+#endif
 }

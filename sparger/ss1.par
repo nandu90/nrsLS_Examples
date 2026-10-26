@@ -8,8 +8,8 @@ endTime = 60
 #stopAt = numSteps
 #numSteps = 100
 
-dt = initial=1e-06+targetCFL=0.2+max=2e-4
-#dt = 1e-4
+#dt = initial=1e-06+targetCFL=0.2+max=2e-4
+dt = 1e-4
 
 timeStepper = tombo2
 
@@ -55,6 +55,7 @@ regularization = svv+scalingCoeff=2.0+filterPower=7.0
 solveFrequency = 2e-3
 residualTol = 1e-8
 maximumSteps = 200
+regularization = avm+c0+scalingCoeff=1.0+noiseThreshold=1e-3
 
 [LVLSET]
 interfaceWidthFactor = 2.5

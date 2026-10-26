@@ -50,6 +50,35 @@ void udfDirichlet(bcData *bc)
   }
 }
 
+@kernel void clearBoundaryAboveFreeSurface(const dlong Nelements,
+                                           const dlong bID,
+                                           const dfloat freeSurfaceZ,
+                                           const dfloat clearThreshold,
+                                           const dfloat epsilon,
+                                           @ restrict const dlong *vmapM,
+                                           @ restrict const int *EToBM,
+                                           @ restrict const dfloat *Z,
+                                           @ restrict dfloat *PSI)
+{
+  for (dlong e = 0; e < Nelements; ++e; @outer(0)) {
+    for (int t = 0; t < p_Nfp; ++t; @inner(0)) {
+      for (int f = 0; f < p_Nfaces; ++f) {
+        const dlong boundaryID = EToBM[f + p_Nfaces*e];
+        if (boundaryID == bID) {
+          const dlong sid = e*p_Nfaces*p_Nfp + f*p_Nfp + t;
+          const dlong id = vmapM[sid];
+          if (Z[id] > clearThreshold) {
+            const dfloat phi = freeSurfaceZ - Z[id];
+            const dfloat theta = phi / (2.0 * epsilon);
+            PSI[id] = 0.5 * (tanh(theta) + 1.0);
+          }
+        }
+      }
+    }
+    @barrier;
+  }
+}
+
 @kernel void clearAboveFreeSurface(const dlong N,
                                    const dfloat clearThreshold,
                                    @ restrict const dfloat *Z,
