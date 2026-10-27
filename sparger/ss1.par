@@ -17,7 +17,7 @@ timeStepper = tombo2
 checkpointControl = simulationTime
 checkPointInterval = 0.1
 
-scalars = tls, cls
+scalars = tls, cls, c
 
 [PROBLEMTYPE]
 equation = navierStokes+variableViscosity
@@ -44,6 +44,12 @@ transportCoeff = 1.0
 diffusionCoeff = 1e-10
 residualTol = 1e-8
 regularization = svv
+
+[SCALAR C]
+boundaryTypeMap = zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, zeroNeumann, inlet, zeroNeumann
+transportCoeff = 1.0
+diffusionCoeff = 1e-10
+residualTol = 1e-8
 
 [TLSR]
 solveFrequency = 2e-2
