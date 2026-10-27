@@ -536,8 +536,9 @@ TemperatureStatistics temperatureStatistics(const dfloat bulkVelocity)
     platform->linAlg->fill(mesh->Nlocal, 1.0, o_one);
     const dfloat wallArea =
         mesh->surfaceAreaMultiplyIntegrate(o_wallBoundaryIds, o_one);
+    auto o_wallTemperature = o_temperature.slice(0, mesh->Nlocal);
     const dfloat integratedWallTemperature =
-        mesh->surfaceAreaMultiplyIntegrate(o_wallBoundaryIds, o_temperature);
+        mesh->surfaceAreaMultiplyIntegrate(o_wallBoundaryIds, o_wallTemperature);
     if (wallArea > 0.0) {
       wallTemperature = integratedWallTemperature/wallArea;
     }
