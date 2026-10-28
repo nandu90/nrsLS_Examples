@@ -67,6 +67,54 @@ void preFluid(double time, int tstep)
 void uservp(double time)
 {
   lvlSet::updateProperties(rhoRatio, muRatio, Re);
+
+  auto mesh = nrs->meshV;
+  speciesDiffusivity(mesh->Nlocal,
+                     solubilityRatio,
+                     diffRatio,
+                     Pe,
+                     nrs->scalar->o_solution("cls"),
+                     nrs->scalar->o_diffusionCoeff("c"));
+}
+
+void userSource(double time)
+{
+  auto mesh = nrs->meshV;
+  const auto offset = nrs->fluid->fieldOffset;
+
+  auto o_flux = platform->deviceMemoryPool.reserve<dfloat>(3 * offset);
+  opSEM::strongGrad(mesh, offset, nrs->scalar->o_solution("tls"), o_flux);
+  scstFlux(mesh->Nlocal,
+           offset,
+           solubilityRatio,
+           diffRatio,
+           Pe,
+           nrs->scalar->o_solution("c"),
+           nrs->scalar->o_solution("cls"),
+           lvlSet::getDeltaFunction(),
+           o_flux);
+  occa::memory o_source = nrs->scalar->o_explicitTerms("c");
+  opSEM::divergence(mesh, offset, o_flux, o_source);
+  oogs::startFinish(o_source, 1, 0, ogsDfloat, ogsAdd, mesh->oogs);
+  platform->linAlg->axmy(mesh->Nlocal, -1.0, mesh->o_invAJw, o_source);
+}
+
+void reportSpecies(double time)
+{
+  auto mesh = nrs->meshV;
+  auto o_c = nrs->scalar->o_solution("c");
+
+  auto o_cpsi = platform->deviceMemoryPool.reserve<dfloat>(mesh->Nlocal);
+  platform->linAlg->axmyz(mesh->Nlocal, 1.0, o_c, nrs->scalar->o_solution("cls"), o_cpsi);
+  const auto cTotal = platform->linAlg->innerProd(mesh->Nlocal, mesh->o_LMM, o_c, platform->comm.mpiComm());
+  const auto cLiquid = platform->linAlg->innerProd(mesh->Nlocal, mesh->o_LMM, o_cpsi, platform->comm.mpiComm());
+  const auto cMin = platform->linAlg->min(mesh->Nlocal, o_c, platform->comm.mpiComm());
+  const auto cMax = platform->linAlg->max(mesh->Nlocal, o_c, platform->comm.mpiComm());
+  if (platform->comm.mpiRank() == 0) {
+    // C_liquid and C_gas in [mol], c_min and c_max in [mol/m^3].
+    printf("species: time=%.8e C_liquid=%.8e C_gas=%.8e c_min=%.8e c_max=%.8e\n",
+           time, cLiquid, cTotal - cLiquid, cMin, cMax);
+  }
 }
 
 void UDF_Setup0(MPI_Comm comm, setupAide &options)
@@ -80,6 +128,7 @@ void UDF_Setup0(MPI_Comm comm, setupAide &options)
 void UDF_Setup()
 {
   nrs->userProperties = &uservp;
+  nrs->userSource = &userSource;
   nrs->preFluid = &preFluid;
 
   auto mesh = nrs->meshV;
@@ -127,6 +176,7 @@ void UDF_Setup()
 
     tlsic(mesh->Nlocal, mesh->o_x, mesh->o_y,mesh->o_z, o_tls);
     lvlSet::initHeaviside(o_tls, o_cls);
+    platform->linAlg->fill(mesh->Nlocal, 0.0, nrs->scalar->o_solution("c"));
   }
 
   //Dimensionless params
@@ -135,14 +185,20 @@ void UDF_Setup()
   const dfloat rhog = 0.622;
   const dfloat mul = 2.2e-3;
   const dfloat mug = 4.64e-5;
+  const dfloat diffl = 1e-6; // placeholder, results in Sc = 1.35
+  const dfloat diffg = 1e-3; // placeholder
   const dfloat sigma = 0.1;
 
   rhoRatio = rhol/rhog * 0.75;  //must be heavier / lighter
   muRatio =  mul/mug;  //must be heavier / lighter
+  diffRatio = diffl/diffg; //must be heavier / lighter
+  solubilityRatio = 1.0/3.0; // placeholder
 
   Re = rhol * velScale * lenScale / mul;
   Fr = velScale * velScale / (gdim * lenScale);
   We = lenScale * rhol * velScale * velScale / sigma;
+  Sc = mul / rhol / diffl;
+  Pe = Re * Sc;
 
   const auto interfaceWidth = lvlSet::getInterfaceWidth();
   platform->app->bc->o_usrwrk.resize(1);
@@ -155,8 +211,12 @@ void UDF_ExecuteStep(double time, int tstep)
     printf("Reynolds Number: %.8e\n", Re);
     printf("Weber Number: %.8e\n", We);
     printf("Froude Number: %.8e\n", Fr);
+    printf("Schmidt Number: %.8e\n", Sc);
+    printf("Peclet Number: %.8e\n", Pe);
     printf("Density Ratio: %.8e\n", rhoRatio);
     printf("Viscosity Ratio: %.8e\n", muRatio);
+    printf("Diffusivity Ratio: %.8e\n", diffRatio);
+    printf("Solubility Ratio: %.8e\n", solubilityRatio);
   }
   lvlSet::solve(time);
 
@@ -203,6 +263,12 @@ void UDF_ExecuteStep(double time, int tstep)
                            mesh->o_y,
                            mesh->o_z,
                            o_cls);
+
+  // Report species inventory to log.
+  if (nrs->checkpointStep) {
+    reportSpecies(time);
+  }
+
 #if 1
   const dfloat maxCFL = 2.0;
   const dfloat cfl = nrs->computeCFL(nrs->fluid->mesh, nrs->fluid->o_U, nrs->dt[0]);

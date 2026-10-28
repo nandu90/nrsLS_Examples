@@ -18,6 +18,72 @@ void udfDirichlet(bcData *bc)
     } else if(bc->id == 3 || bc->id == 6) {
       bc->sScalar = 0.0;
     }
+  } else if (isField("scalar c")) {
+    // The species enters with the gas at the tube inlets.
+    if(bc->id == 6) {
+      bc->sScalar = 1.0;
+    }
+  }
+}
+
+// Strong Continuum Species Transport (SCST):
+//   dc/dt + u.grad(c) = div(D grad(c)) + div(K c grad(psi)),
+//   D = (D1 H psi + D2 (1 - psi)) / (H psi + 1 - psi),
+//   K = (1 - H) D / (H psi + 1 - psi),
+// with psi the liquid fraction (CLS), D1 = 1/Pe and D2 = D1/diffRatio the
+// liquid and gas diffusivities and H = solubilityRatio the dimensionless
+// Henry constant (liquid c / gas c at equilibrium).
+//
+// The total flux
+//   -D grad(c) - K c grad(psi)
+// vanishes at Henry equilibrium across the interface.
+dfloat scstDiffusivity(const dfloat psi,
+                       const dfloat solubilityRatio,
+                       const dfloat diffRatio,
+                       const dfloat Pe)
+{
+  const dfloat p = fmin(1.0, fmax(0.0, psi));
+  return (solubilityRatio * p + (1.0 - p) / diffRatio) / (Pe * (solubilityRatio * p + 1.0 - p));
+}
+
+@kernel void speciesDiffusivity(const dlong N,
+                                const dfloat solubilityRatio,
+                                const dfloat diffRatio,
+                                const dfloat Pe,
+                                @ restrict const dfloat *PSI,
+                                @ restrict dfloat *DIFF)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    DIFF[n] = scstDiffusivity(PSI[n], solubilityRatio, diffRatio, Pe);
+  }
+}
+
+// SCST pseudo-advective flux F = K c grad(psi), with grad(psi) taken as
+// delta * grad(phi)/|grad(phi)|. F must hold grad(phi) as input.
+@kernel void scstFlux(const dlong N,
+                      const dlong offset,
+                      const dfloat solubilityRatio,
+                      const dfloat diffRatio,
+                      const dfloat Pe,
+                      @ restrict const dfloat *C,
+                      @ restrict const dfloat *PSI,
+                      @ restrict const dfloat *DELTA,
+                      @ restrict dfloat *F)
+{
+  for (dlong n = 0; n < N; ++n; @tile(p_blockSize, @outer, @inner)) {
+    const dfloat p = fmin(1.0, fmax(0.0, PSI[n]));
+    const dfloat K = (1.0 - solubilityRatio) * scstDiffusivity(p, solubilityRatio, diffRatio, Pe) /
+                     (solubilityRatio * p + 1.0 - p);
+
+    const dfloat gradphix = F[n + 0*offset];
+    const dfloat gradphiy = F[n + 1*offset];
+    const dfloat gradphiz = F[n + 2*offset];
+    const dfloat mag = sqrt(gradphix*gradphix + gradphiy*gradphiy + gradphiz*gradphiz);
+    const dfloat coeff = (mag > 1e-12) ? K * C[n] * DELTA[n] / mag : 0.0;
+
+    F[n + 0*offset] = coeff * gradphix;
+    F[n + 1*offset] = coeff * gradphiy;
+    F[n + 2*offset] = coeff * gradphiz;
   }
 }
 
