@@ -7,7 +7,7 @@ stopAt = endTime
 endTime = 100
 #stopAt = numSteps
 #numSteps = 2000
-dt = initial=1.0e-5+targetCFL=0.2+max=1.0e-3
+dt = initial=1.0e-5+targetCFL=0.4+max=1.0e-3
 #dt = 1.0e-4
 timeStepper = tombo2
 
@@ -53,14 +53,16 @@ regularization = svv+scalingCoeff=1.0+filterPower=2.0
 
 [TLSR]
 #solver = none
-solveFrequency = 0.02
+solveFrequency = 2e-2
 residualTol = 1e-8
+#regularization = svv+scalingCoeff=1.0+filterPower=9.0         #for p9
 
 [CLSR]
 #solver = none
 boundaryTypeMap = zeroNeumann
-solveFrequency = 0.002
+solveFrequency = 2e-3
 residualTol = 1e-8
+#regularization = svv+scalingCoeff=1.0+filterPower=5.0         #for p9
 
 [LVLSET]
 interfaceWidthFactor = 1.2
