@@ -60,7 +60,7 @@ residualTol = 1e-8
 [CLSR]
 #solver = none
 boundaryTypeMap = zeroNeumann
-solveFrequency = 4e-3
+solveFrequency = 2e-3
 residualTol = 1e-8
 #regularization = svv+scalingCoeff=1.0+filterPower=5.0         #for p9
 
