@@ -80,6 +80,8 @@ def main():
 
     t = data[:, 0]
     alphaD, area, se = data[:, 1], data[:, 2], data[:, 3]
+    volumeError = np.abs((alphaD - alphaD[0])/alphaD[0])
+    volumeError[volumeError == 0.0] = np.nan
     kMix, epsMix = data[:, 4], data[:, 5]
     kC, kD = data[:, 6], data[:, 7]
     epsC, epsD = data[:, 8], data[:, 9]
@@ -93,6 +95,10 @@ def main():
                 linestyles=["-"]*n, markers=[""]*n, showmean=True)
 
     makeplot("volumeFraction", r"$\alpha_D$", [alphaD], [r"$\alpha_D$"])
+    plotnow("volumeError", r"$t$",
+            r"$|\alpha_D-\alpha_{D,0}|/\alpha_{D,0}$",
+            [t], [volumeError], [r"relative volume error"],
+            ptype="semilogy", linestyles=["-"], markers=[""])
     makeplot("interfaceArea", r"$S$", [area], [r"$S$"])
     makeplot("surfaceEnergy", r"$se$", [se], [r"$se$"])
     makeplot("tke", r"$k$", [kMix, kC, kD],
