@@ -11,12 +11,16 @@ mpl.use("Agg")
 import matplotlib.pyplot as plt
 
 
-FIELDS = (
+BASE_FIELDS = (
     "u", "v", "w", "rho", "mu", "cls", "fSigmaX", "fSigmaY",
     "fSigmaZ", "surfaceTensionPower", "viscousDissipation",
     "pressureGradientPower", "gravityPower", "tau11", "tau12", "tau13",
     "tau22", "tau23", "tau33", "uFSigmaX", "vFSigmaY", "wFSigmaZ",
     "rhoU", "rhoV", "rhoW",
+)
+THERMAL_FIELDS = (
+    "T", "T2", "conductivity", "rhoCp", "uT", "vT", "wT",
+    "rhoCpUT", "rhoCpVT", "rhoCpWT",
 )
 
 
@@ -130,7 +134,7 @@ def main():
     total_duration, intervals = 0.0, 0
     for filename in files:
         for names, metadata, raw_data in read_blocks(filename):
-            if names != FIELDS:
+            if names not in (BASE_FIELDS, BASE_FIELDS + THERMAL_FIELDS):
                 raise RuntimeError("Unexpected field ordering in %s" % filename)
             if raw_data.shape != (metadata["points"], len(names) + 1):
                 raise RuntimeError("Incomplete interval in %s at time %.8g"
@@ -147,7 +151,7 @@ def main():
     if total_duration <= 0.0:
         raise RuntimeError("No positive-duration profile intervals found")
     profiles = {name: accumulated[:, i]/total_duration
-                for i, name in enumerate(FIELDS)}
+                for i, name in enumerate(names)}
     write_outputs(args.output, reference_y, profiles,
                   total_duration, args.re_tau)
     print("Combined %d intervals over duration %.8g into %s"

@@ -54,6 +54,16 @@ enum BudgetDiagnosticField
   densityVelocityX,
   densityVelocityY,
   densityVelocityZ,
+  meanTemperature,
+  meanTemperatureSquared,
+  meanConductivity,
+  meanRhoCp,
+  velocityTemperatureX,
+  velocityTemperatureY,
+  velocityTemperatureZ,
+  enthalpyFluxX,
+  enthalpyFluxY,
+  enthalpyFluxZ,
   numberOfBudgetDiagnosticFields
 };
 
@@ -63,7 +73,9 @@ static const std::array<const char *, numberOfBudgetDiagnosticFields>
         "fSigmaX", "fSigmaY", "fSigmaZ", "surfaceTensionPower",
         "viscousDissipation", "pressureGradientPower", "gravityPower",
         "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
-        "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW"};
+        "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW",
+        "T", "T2", "conductivity", "rhoCp", "uT", "vT", "wT",
+        "rhoCpUT", "rhoCpVT", "rhoCpWT"};
 
 void setupCoordinateBasedProfiles()
 {
@@ -396,6 +408,9 @@ void collectBudgetProfiles(const dfloat time)
   auto o_rho = nrs->fluid->o_prop.slice(1*offset, mesh->Nlocal);
   auto o_mue = nrs->fluid->o_prop.slice(0*offset, mesh->Nlocal);
   auto o_cls = nrs->scalar->o_solution("cls");
+  auto o_temperature = nrs->scalar->o_solution("temperature");
+  auto o_conductivity = nrs->scalar->o_diffusionCoeff("temperature");
+  auto o_rhoCp = nrs->scalar->o_transportCoeff("temperature");
   auto o_Sij = nrs->strainRate();
 
   assembleBudgetDiagnostics(
@@ -407,6 +422,9 @@ void collectBudgetProfiles(const dfloat time)
       o_rho,
       o_mue,
       o_cls,
+      o_temperature,
+      o_conductivity,
+      o_rhoCp,
       o_Sij,
       o_surfaceTensionAcceleration,
       o_budgetDiagnosticFields);

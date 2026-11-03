@@ -9,6 +9,9 @@
                                        @ restrict const dfloat *RHO,
                                        @ restrict const dfloat *MUE,
                                        @ restrict const dfloat *CLS,
+                                       @ restrict const dfloat *TEMPERATURE,
+                                       @ restrict const dfloat *CONDUCTIVITY,
+                                       @ restrict const dfloat *RHOCP,
                                        @ restrict const dfloat *SIJ,
                                        @ restrict const dfloat *SURFACEACC,
                                        @ restrict dfloat *BUDGET)
@@ -19,6 +22,8 @@
     const dfloat uz = U[n + 2*offset];
     const dfloat rho = RHO[n];
     const dfloat mu = MUE[n];
+    const dfloat temperature = TEMPERATURE[n];
+    const dfloat rhoCp = RHOCP[n];
 
     const dfloat fsx = rho*SURFACEACC[n + 0*offset];
     const dfloat fsy = rho*SURFACEACC[n + 1*offset];
@@ -57,6 +62,16 @@
     BUDGET[n + 22*offset] = rho*ux;
     BUDGET[n + 23*offset] = rho*uy;
     BUDGET[n + 24*offset] = rho*uz;
+    BUDGET[n + 25*offset] = temperature;
+    BUDGET[n + 26*offset] = temperature*temperature;
+    BUDGET[n + 27*offset] = CONDUCTIVITY[n];
+    BUDGET[n + 28*offset] = rhoCp;
+    BUDGET[n + 29*offset] = ux*temperature;
+    BUDGET[n + 30*offset] = uy*temperature;
+    BUDGET[n + 31*offset] = uz*temperature;
+    BUDGET[n + 32*offset] = rhoCp*ux*temperature;
+    BUDGET[n + 33*offset] = rhoCp*uy*temperature;
+    BUDGET[n + 34*offset] = rhoCp*uz*temperature;
   }
 }
 
