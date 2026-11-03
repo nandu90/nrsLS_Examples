@@ -30,12 +30,12 @@ The default physical domain is the one defined in `channel.udf`:
 - `y` in `[-1, 1]`, including both walls and tanh-stretched with `beta=1.5`;
 - `z` in `[-pi/2, pi/2)`, uniform and periodic.
 
-The output contains `u`, `v`, `w`, `p`, and `cls`.  In this case the scalar
+The output contains `u`, `v`, `w`, `p`, `T`, and `cls`. In this case the scalar
 ordering is temperature=`s0`, TLS=`s1`, and CLS=`s2`; the interpolation script
-therefore reads `s2` explicitly.
+therefore reads temperature from `s0` and CLS from `s2` explicitly.
 
-The default grid stores about 0.16 GiB of raw field values per snapshot.  A
-`512 x 257 x 256` production grid stores about 1.26 GiB per snapshot.  Choose
+The default grid stores about 0.19 GiB of raw field values per snapshot. A
+`512 x 257 x 256` production grid stores about 1.51 GiB per snapshot. Choose
 `nx` and `nz` based on the maximum wavenumber needed, not merely disk space.
 
 ## 3. Extract spectra
@@ -52,8 +52,9 @@ The script performs one-dimensional FFTs only in the homogeneous periodic
 directions.  It writes:
 
 - `spectraData/spectra.npz`: `Ex(y,kx,component)`,
-  `Ez(y,kz,component)`, variances, and TKE;
+  `Ez(y,kz,component)`, velocity and temperature spectra, variances, and TKE;
 - premultiplied, variance-normalized spectra at the requested wall distances;
+- premultiplied temperature spectra when `T` is present;
 - a Parseval error report for normalization verification.
 
 The zero Fourier mode is removed by subtracting each instantaneous x-z plane
@@ -83,6 +84,10 @@ It writes:
 - anisotropy invariants, Lumley flatness, eigenvalues, and barycentric
   coordinates;
 - gas-volume-fraction profiles;
+- mean and RMS temperature, velocity--temperature covariance, and
+  phase-conditioned temperature statistics when `T` is present;
+- `temperatureProfile.dat` and `temperatureStatistics.png` when `T` is
+  present;
 - `anisotropyProfile.dat` and summary figures for both modes;
 - conventional channel TKE-budget terms, `tkeBudget.dat`, and
   `tkeBudget.png` for a single-phase data set only.
@@ -100,7 +105,40 @@ appended to `budgetProfiles.dat` and the interval accumulator is reset. No
 additional full-mesh field file is written, and the restart layout is
 unchanged.
 
-## 5. Reduce the in-situ two-phase fields
+## 5. Plot and combine the in-situ two-phase profiles
+
+Each block in `budgetProfiles.dat` is already x-z planar averaged and time
+averaged over the duration recorded in its interval header. Combine
+chronological restart files for one case with `+`, and use `--t-min` to select
+the statistically stationary interval:
+
+```bash
+python ../plotBudgetProfiles.py \
+  --input 'run1/budgetProfiles.dat+run2/budgetProfiles.dat' \
+  --labels 'N=7' \
+  --t-min 20 \
+  --output budgetProfilePlots
+```
+
+Later files replace overlapping intervals from earlier files. Several meshes
+can be compared without averaging them together:
+
+```bash
+python ../plotBudgetProfiles.py \
+  --input 'hbase/p7/budgetProfiles.dat' \
+          'hbase/p9/budgetProfiles.dat' \
+          'hrefine/p7/budgetProfiles.dat' \
+  --labels 'N=7' 'N=9' 'h/2, N=7' \
+  --t-min 20 \
+  --output budgetProfilePlots
+```
+
+Newly generated files also contain mean and RMS temperature, conductivity,
+volumetric heat capacity, velocity--temperature covariance, and convective
+enthalpy-flux profiles. Old files remain readable but cannot supply thermal
+profiles retroactively.
+
+## 6. Reduce the in-situ two-phase fields
 
 Run this in the two-phase case directory after the simulation:
 
@@ -122,11 +160,12 @@ averaging duration and merges duplicate GLL points at element boundaries. It wri
 - pressure-gradient and gravity power.
 
 The column ordering in `budgetProfiles.dat` is fixed by `channel.udf` and
-checked by the reducer. Do not mix files produced by different UDF versions.
+checked by the reducer. Old mechanical-only and new thermal layouts are both
+recognized, but do not combine the two layouts in one reduction.
 
-Set `collectAvg = true` near the top of `channel.udf` only when the desired
-statistical averaging interval begins. It defaults to `false`, so precursor
-and transient runs do not allocate or write the extra averaging fields.
+Set `collectAvg` near the top of `postProcessing.inc` to `true` only when the
+desired statistical averaging interval begins. Check its value before every
+production run rather than assuming a particular default.
 
 Before restarting with `collectAvg = true`, rename the existing file, for
 example to `budgetProfiles_segment01.dat`; setup opens a new
@@ -139,7 +178,29 @@ The plotted in-situ power terms are not, by themselves, a closed TKE budget;
 closure requires combining them with the restart-derived transport and
 production terms on the same statistical interval.
 
-## 6. Compare single- and two-phase cases
+## 7. Plot monitor and runtime histories
+
+Use `plotBubbly.py` to compare the time histories in `bubbly.dat`:
+
+```bash
+python ../plotBubbly.py \
+  --input hbase/p7/bubbly.dat hbase/p9/bubbly.dat hrefine/p7/bubbly.dat \
+  --labels 'N=7' 'N=9' 'h/2, N=7' \
+  --output bubblyPlots
+```
+
+Use `plotLog.py` for CHANNEL, THERMAL, y+, timestep, CFL, and per-step runtime
+diagnostics. Chronological restart logs for one case use the same `+` syntax:
+
+```bash
+python ../plotLog.py \
+  --input 'log1+log2+log3' \
+  --labels 'h/2, N=7' \
+  --t-min 20 \
+  --output logPlots
+```
+
+## 8. Compare single- and two-phase cases
 
 After processing each case separately:
 

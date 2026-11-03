@@ -108,7 +108,19 @@ def reduce_sum(comm, value):
     return result
 
 
-def plot_results(output, y, yplus, liquid, gas, budget=None):
+def phase_temperature_results(weight, first, second,
+                              velocity_temperature, velocity_mean):
+    safe = np.maximum(weight, 1.0e-30)
+    mean = first/safe
+    variance = np.maximum(second/safe - mean*mean, 0.0)
+    covariance = (velocity_temperature/safe[:, None]
+                  - velocity_mean*mean[:, None])
+    return {"mean": mean, "variance": variance,
+            "rms": np.sqrt(variance), "velocityCovariance": covariance}
+
+
+def plot_results(output, y, yplus, liquid, gas, budget=None,
+                 temperature=None):
     upper = y >= -1.0e-12
     order = np.argsort(yplus[upper])
     yp = yplus[upper][order]
@@ -176,6 +188,29 @@ def plot_results(output, y, yplus, liquid, gas, budget=None):
         fig.savefig(os.path.join(output, "tkeBudget.png"), dpi=200)
         plt.close(fig)
 
+    if temperature is not None:
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        axes[0].plot(temperature["all"]["mean"], y,
+                     label=r"$\langle T\rangle$")
+        axes[0].plot(temperature["all"]["rms"], y,
+                     label=r"$T_{rms}$")
+        axes[0].set_xlabel("temperature statistic")
+        axes[0].set_ylabel(r"$y/\delta$")
+        for component, label in enumerate(
+                (r"$\langle u'T'\rangle$", r"$\langle v'T'\rangle$",
+                 r"$\langle w'T'\rangle$")):
+            axes[1].plot(
+                temperature["all"]["velocityCovariance"][:, component],
+                y, label=label)
+        axes[1].set_xlabel("velocity--temperature covariance")
+        for axis in axes:
+            axis.grid(True, alpha=0.35)
+            axis.legend(fontsize=8)
+        fig.tight_layout()
+        fig.savefig(os.path.join(output, "temperatureStatistics.png"),
+                    dpi=200)
+        plt.close(fig)
+
 
 def main():
     args = arguments()
@@ -189,6 +224,7 @@ def main():
     with np.load(files[0]) as first:
         x, y, z = first["x"], first["y"], first["z"]
         shape = first["u"].shape
+        temperature_available = "T" in first.files
     nx, ny, nz = shape
     plane_points = nx*nz
     local_count = 0
@@ -199,6 +235,11 @@ def main():
     m2 = {name: np.zeros((ny, 3, 3)) for name in w}
     pressure_sum = np.zeros(ny)
     alpha_sum = np.zeros(ny)
+    if temperature_available:
+        temperature_first = {name: np.zeros(ny) for name in w}
+        temperature_second = {name: np.zeros(ny) for name in w}
+        velocity_temperature = {
+            name: np.zeros((ny, 3)) for name in w}
     local_times = []
 
     for filename in files[rank::size]:
@@ -219,6 +260,19 @@ def main():
             pressure = data["p"] - np.mean(data["p"])
             pressure_sum += np.sum(pressure, axis=(0, 2))
             alpha_sum += np.sum(1.0 - cls, axis=(0, 2))
+            if temperature_available:
+                if "T" not in data.files:
+                    raise RuntimeError("Temperature is missing from %s" %
+                                       filename)
+                temperature = data["T"]
+                for name, weight in weights.items():
+                    temperature_first[name] += np.sum(
+                        weight*temperature, axis=(0, 2))
+                    temperature_second[name] += np.sum(
+                        weight*temperature*temperature, axis=(0, 2))
+                    velocity_temperature[name] += np.sum(
+                        weight[..., None]*velocity*temperature[..., None],
+                        axis=(0, 2))
             local_count += 1
             local_times.append(float(data["time"]))
 
@@ -228,11 +282,27 @@ def main():
         m2[name] = reduce_sum(comm, m2[name])
     pressure_sum = reduce_sum(comm, pressure_sum)
     alpha_sum = reduce_sum(comm, alpha_sum)
+    if temperature_available:
+        for name in w:
+            temperature_first[name] = reduce_sum(
+                comm, temperature_first[name])
+            temperature_second[name] = reduce_sum(
+                comm, temperature_second[name])
+            velocity_temperature[name] = reduce_sum(
+                comm, velocity_temperature[name])
     count = comm.allreduce(local_count, op=MPI.SUM)
     all_times = comm.gather(local_times, root=0)
 
     statistics = {name: phase_results(w[name], m1[name], m2[name])
                   for name in w}
+    temperature_statistics = None
+    if temperature_available:
+        temperature_statistics = {
+            name: phase_temperature_results(
+                w[name], temperature_first[name], temperature_second[name],
+                velocity_temperature[name], statistics[name]["mean"])
+            for name in w
+        }
     mean_velocity = statistics["all"]["mean"]
     mean_pressure = pressure_sum/(count*plane_points)
     alpha_gas = alpha_sum/(count*plane_points)
@@ -318,6 +388,21 @@ def main():
     for phase in ("liquid", "gas"):
         for name, value in statistics[phase].items():
             output[phase + name[0].upper() + name[1:]] = value
+    if temperature_available:
+        output["meanTemperature"] = temperature_statistics["all"]["mean"]
+        output["temperatureVariance"] = temperature_statistics["all"][
+            "variance"]
+        output["temperatureRms"] = temperature_statistics["all"]["rms"]
+        output["turbulentHeatFlux"] = temperature_statistics["all"][
+            "velocityCovariance"]
+        for phase in ("liquid", "gas"):
+            prefix = phase + "Temperature"
+            output[prefix + "Mean"] = temperature_statistics[phase]["mean"]
+            output[prefix + "Variance"] = temperature_statistics[phase][
+                "variance"]
+            output[prefix + "Rms"] = temperature_statistics[phase]["rms"]
+            output[prefix + "VelocityCovariance"] = \
+                temperature_statistics[phase]["velocityCovariance"]
     if budget is not None:
         for name, value in budget.items():
             output["budget" + name[0].upper() + name[1:]] = value
@@ -336,6 +421,23 @@ def main():
     np.savetxt(os.path.join(args.output, "anisotropyProfile.dat"), profile,
                header="y yplus alphaGas kLiquid b11 b22 b33 F xB yB")
 
+    if temperature_available:
+        temperature_profile = np.column_stack((
+            y, yplus,
+            temperature_statistics["all"]["mean"],
+            temperature_statistics["all"]["rms"],
+            temperature_statistics["all"]["velocityCovariance"],
+            temperature_statistics["liquid"]["mean"],
+            temperature_statistics["liquid"]["rms"],
+            temperature_statistics["gas"]["mean"],
+            temperature_statistics["gas"]["rms"],
+        ))
+        np.savetxt(
+            os.path.join(args.output, "temperatureProfile.dat"),
+            temperature_profile,
+            header=("y yplus meanT Trms uPrimeTPrime vPrimeTPrime "
+                    "wPrimeTPrime liquidMeanT liquidTrms gasMeanT gasTrms"))
+
     if budget is not None:
         budget_table = np.column_stack((
             y, yplus, production, -dissipation, turbulent_transport,
@@ -345,7 +447,7 @@ def main():
                            "turbulentTransport pressureTransport "
                            "viscousDiffusion resolvedResidual"))
     plot_results(args.output, y, yplus, statistics["liquid"],
-                 statistics["gas"], budget)
+                 statistics["gas"], budget, temperature_statistics)
     print("Wrote statistics to %s" % args.output)
     if two_phase:
         print("Two-phase case detected: no TKE budget was generated because "

@@ -89,7 +89,7 @@ def main():
         find_points_comm_pattern="point_to_point",
     )
 
-    names = ["u", "v", "w", "p", "cls"]
+    names = ["u", "v", "w", "p", "T", "cls"]
 
     for file_index, restart_file in enumerate(restart_files):
         if file_index:
@@ -105,6 +105,7 @@ def main():
             field.registry["v"],
             field.registry["w"],
             field.registry["p"],
+            field.registry["s0"],
             field.registry["s2"],
         ]
 
