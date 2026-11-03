@@ -74,10 +74,11 @@ def main():
     pynekread(restart_files[0], comm, data_dtype=np.double,
               msh=mesh, fld=field)
 
-    if field.scal_fields < 3:
+    if field.temp_fields < 1 or field.scal_fields < 2:
         raise RuntimeError(
-            "Expected temperature, tls, and cls (s0, s1, s2); found %d scalars"
-            % field.scal_fields)
+            "Expected one temperature field and two passive scalars "
+            "(TLS=s0, CLS=s1); found %d temperature fields and %d passive "
+            "scalars" % (field.temp_fields, field.scal_fields))
 
     probes = Probes(
         comm,
@@ -96,17 +97,19 @@ def main():
             pynekread(restart_file, comm, data_dtype=np.double,
                       fld=field, overwrite_fld=True)
 
-        if field.scal_fields < 3:
-            raise RuntimeError("Checkpoint %s does not contain cls=s2"
-                               % restart_file)
+        if field.temp_fields < 1 or field.scal_fields < 2:
+            raise RuntimeError(
+                "Checkpoint %s does not contain T plus TLS=s0 and CLS=s1 "
+                "(found %d temperature fields and %d passive scalars)"
+                % (restart_file, field.temp_fields, field.scal_fields))
 
         fields = [
             field.registry["u"],
             field.registry["v"],
             field.registry["w"],
             field.registry["p"],
-            field.registry["s0"],
-            field.registry["s2"],
+            field.registry["t"],
+            field.registry["s1"],
         ]
 
         probes.interpolate_from_field_list(

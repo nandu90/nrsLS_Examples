@@ -20,16 +20,6 @@ COLUMNS = (
     "slipX", "slipY", "slipZ", "slipMagnitude",
 )
 
-# Exact sharp-interface gas volume for the initialized 83 spherical bubbles.
-# The channel dimensions are 2*pi x 2 x pi and each bubble has radius 0.15.
-BUBBLE_RADIUS = 0.15
-NUMBER_BUBBLES = 83
-DOMAIN_VOLUME = 4.0*np.pi**2
-EXACT_BUBBLE_VOLUME = 4.0*np.pi*BUBBLE_RADIUS**3/3.0
-EXACT_GAS_VOLUME = NUMBER_BUBBLES*EXACT_BUBBLE_VOLUME
-EXACT_ALPHA_G = EXACT_GAS_VOLUME/DOMAIN_VOLUME
-
-
 def plotnow(fname, xlabel, ylabel, x, y, labels, ptype="line",
             linestyles=[], markers=[], colors=[], ylim=[], xlim=[],
             legend_fontsize=12, show_all_log_decades=False):
@@ -197,8 +187,8 @@ def plot_bubbly(output_dir, datasets, case_labels):
 
     plotnow(
         os.path.join(output_dir, "gasVolumeFraction"),
-        r"$t$", r"$\alpha_g/\alpha_{g,e}$",
-        times, [data["alphaG"]/EXACT_ALPHA_G for data in datasets],
+        r"$t$", r"$\alpha_g$",
+        times, [data["alphaG"] for data in datasets],
         case_labels, linestyles=linestyles, markers=markers,
         colors=field_colors(1),
     )

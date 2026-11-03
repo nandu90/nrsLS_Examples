@@ -30,9 +30,10 @@ The default physical domain is the one defined in `channel.udf`:
 - `y` in `[-1, 1]`, including both walls and tanh-stretched with `beta=1.5`;
 - `z` in `[-pi/2, pi/2)`, uniform and periodic.
 
-The output contains `u`, `v`, `w`, `p`, `T`, and `cls`. In this case the scalar
-ordering is temperature=`s0`, TLS=`s1`, and CLS=`s2`; the interpolation script
-therefore reads temperature from `s0` and CLS from `s2` explicitly.
+The output contains `u`, `v`, `w`, `p`, `T`, and `cls`. A checkpoint header such
+as `XUPTS02` stores temperature in Nek's dedicated `T` field and has two passive
+scalars: TLS=`s0` and CLS=`s1`. The interpolation script therefore reads
+temperature from `T` and CLS from `s1` explicitly; TLS is not exported.
 
 The default grid stores about 0.19 GiB of raw field values per snapshot. A
 `512 x 257 x 256` production grid stores about 1.51 GiB per snapshot. Choose
@@ -97,8 +98,9 @@ transport, pressure transport, and viscous diffusion. It is generated only
 for the constant-property single-phase channel. If gas is detected, the
 second budget pass is skipped: no two-phase budget or residual is written.
 
-With checkpoints restricted to `u`, `v`, `w`, `p`, `cls`, and `tls`, the
-two-phase-only terms are accumulated in situ by `channel.udf`. They are
+With checkpoints restricted to `u`, `v`, `w`, `p`, the dedicated temperature
+field `T`, and the two passive scalars TLS and CLS, the two-phase-only terms
+are accumulated in situ by `channel.udf`. They are
 first x-z averaged on the device and then time averaged as one-dimensional
 wall-normal profiles. At each normal checkpoint event an interval block is
 appended to `budgetProfiles.dat` and the interval accumulator is reset. No
