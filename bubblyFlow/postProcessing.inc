@@ -432,11 +432,27 @@ void collectBudgetProfiles(const dfloat time)
   if (nrs->timeStepConverged) {
     coordinateBasedPlanarAverage(o_budgetDiagnosticFields);
 
-    profileInterpolator->eval(numberOfBudgetDiagnosticFields,
-                              offset,
-                              o_budgetDiagnosticFields,
-                              numberProfilePoints,
-                              o_profileInstant);
+    // findpts::eval supports at most 30 fields per call. Keep the complete
+    // diagnostic layout contiguous, but interpolate it in compatible batches.
+    static constexpr int maximumInterpolationFields = 30;
+    for (int firstField = 0;
+         firstField < numberOfBudgetDiagnosticFields;
+         firstField += maximumInterpolationFields) {
+      const int fieldsInBatch = std::min(
+          maximumInterpolationFields,
+          numberOfBudgetDiagnosticFields - firstField);
+      auto o_batchInput = o_budgetDiagnosticFields.slice(
+          firstField*offset,
+          fieldsInBatch*offset);
+      auto o_batchOutput = o_profileInstant.slice(
+          firstField*numberProfilePoints,
+          fieldsInBatch*numberProfilePoints);
+      profileInterpolator->eval(fieldsInBatch,
+                                offset,
+                                o_batchInput,
+                                numberProfilePoints,
+                                o_batchOutput);
+    }
 
     if (firstProfileSample) {
       previousProfileTime = time;
