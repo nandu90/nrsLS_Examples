@@ -12,6 +12,12 @@ import matplotlib.pyplot as plt
 
 
 BASE_FIELDS = (
+    "u", "v", "w", "rho", "mu", "cls", "surfaceTensionPower",
+    "viscousDissipation",
+    "pressureGradientPower", "gravityPower", "tau11", "tau12", "tau13",
+    "tau22", "tau23", "tau33", "rhoU", "rhoV", "rhoW",
+)
+LEGACY_BASE_FIELDS = (
     "u", "v", "w", "rho", "mu", "cls", "fSigmaX", "fSigmaY",
     "fSigmaZ", "surfaceTensionPower", "viscousDissipation",
     "pressureGradientPower", "gravityPower", "tau11", "tau12", "tau13",
@@ -78,13 +84,6 @@ def collapse_duplicate_y(data, decimals):
 def write_outputs(output, y, profiles, duration, re_tau):
     os.makedirs(output, exist_ok=True)
     profiles["alphaGas"] = 1.0 - profiles["cls"]
-    profiles["surfaceTensionPowerMean"] = (
-        profiles["u"]*profiles["fSigmaX"]
-        + profiles["v"]*profiles["fSigmaY"]
-        + profiles["w"]*profiles["fSigmaZ"])
-    profiles["surfaceTensionPowerTurbulent"] = (
-        profiles["uFSigmaX"] + profiles["vFSigmaY"]
-        + profiles["wFSigmaZ"] - profiles["surfaceTensionPowerMean"])
     for component in "UVW":
         profiles["favre" + component] = (
             profiles["rho" + component]/profiles["rho"])
@@ -96,8 +95,7 @@ def write_outputs(output, y, profiles, duration, re_tau):
 
     columns = (
         "y", "alphaGas", "rho", "u", "v", "w", "favreU",
-        "fSigmaX", "fSigmaY", "fSigmaZ", "surfaceTensionPower",
-        "surfaceTensionPowerMean", "surfaceTensionPowerTurbulent",
+        "surfaceTensionPower",
         "viscousDissipation", "pressureGradientPower", "gravityPower",
         "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
     )
@@ -110,7 +108,6 @@ def write_outputs(output, y, profiles, duration, re_tau):
     axes[0].set_xlabel(r"$\langle\alpha_g\rangle_{xz,t}$")
     axes[0].set_ylabel(r"$y/\delta$")
     for name, label in (
-            ("surfaceTensionPowerTurbulent", "capillary, fluctuating"),
             ("surfaceTensionPower", "capillary, total"),
             ("viscousDissipation", "viscous dissipation"),
             ("pressureGradientPower", "pressure-gradient power"),
@@ -134,7 +131,13 @@ def main():
     total_duration, intervals = 0.0, 0
     for filename in files:
         for names, metadata, raw_data in read_blocks(filename):
-            if names not in (BASE_FIELDS, BASE_FIELDS + THERMAL_FIELDS):
+            valid_layouts = (
+                BASE_FIELDS,
+                BASE_FIELDS + THERMAL_FIELDS,
+                LEGACY_BASE_FIELDS,
+                LEGACY_BASE_FIELDS + THERMAL_FIELDS,
+            )
+            if names not in valid_layouts:
                 raise RuntimeError("Unexpected field ordering in %s" % filename)
             if raw_data.shape != (metadata["points"], len(names) + 1):
                 raise RuntimeError("Incomplete interval in %s at time %.8g"

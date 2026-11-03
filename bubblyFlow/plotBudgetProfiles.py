@@ -261,10 +261,6 @@ def plot_profiles(output_dir, profiles, case_labels):
              r"$\langle\rho c_p wT\rangle$"))
 
     comparison(
-        "capillaryForce", "capillary force per volume",
-        ("fSigmaX", "fSigmaY", "fSigmaZ"),
-        (r"$f_{\sigma,x}$", r"$f_{\sigma,y}$", r"$f_{\sigma,z}$"))
-    comparison(
         "mechanicalPower", "planar-mean power density",
         ("pressureGradientPower", "gravityPower", "surfaceTensionPower",
          "viscousSink", "net"),
@@ -283,13 +279,6 @@ def plot_profiles(output_dir, profiles, case_labels):
     comparison(
         "viscousStress", "planar-mean viscous stress", stress_fields,
         tuple(r"$\tau_{%s}$" % name[3:] for name in stress_fields))
-    comparison(
-        "velocityCapillaryCorrelation",
-        "velocity--capillary-force correlation",
-        ("uFSigmaX", "vFSigmaY", "wFSigmaZ"),
-        (r"$\langle u f_{\sigma,x}\rangle$",
-         r"$\langle v f_{\sigma,y}\rangle$",
-         r"$\langle w f_{\sigma,z}\rangle$"))
 
 
 def main():

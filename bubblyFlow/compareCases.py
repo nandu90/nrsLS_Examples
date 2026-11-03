@@ -28,6 +28,16 @@ def folded(y, yplus, value):
     return yplus[upper][order], symmetric[upper][order]
 
 
+def wavenumber_spacing(wave):
+    """Return the constant spacing of a uniformly sampled FFT grid."""
+    if wave.size < 2:
+        raise ValueError("At least two wavenumbers are required")
+    spacing = float(wave[1] - wave[0])
+    if spacing <= 0.0 or not np.allclose(np.diff(wave), spacing):
+        raise ValueError("Expected uniformly spaced increasing wavenumbers")
+    return spacing
+
+
 def main():
     args = arguments()
     os.makedirs(args.output, exist_ok=True)
@@ -83,20 +93,19 @@ def main():
         for data, label, style in ((ss, "single phase", "-"),
                                    (ts, "bubbly", "--")):
             iy = int(np.argmin(np.abs(data["yplus"] - target)))
-            re_tau = float(data["reTau"])
             for ax, key_spectrum, key_wave, direction in (
                     (axes[0], "Ex", "kx", "x"),
                     (axes[1], "Ez", "kz", "z")):
                 wave = data[key_wave]
                 spectrum = data[key_spectrum][iy, :, 0]
                 positive = wave > 0.0
-                wavelength_plus = 2.0*np.pi*re_tau/wave[positive]
+                delta_wave = wavenumber_spacing(wave)
                 premultiplied = (wave[positive]*spectrum[positive]
-                                 / max(data["variance"][iy, 0], 1.0e-30))
-                order = np.argsort(wavelength_plus)
-                ax.semilogx(wavelength_plus[order], premultiplied[order],
+                                 /(delta_wave
+                                   * max(data["variance"][iy, 0], 1.0e-30)))
+                ax.semilogx(wave[positive], premultiplied,
                             style, label=label)
-                ax.set_xlabel(r"$\lambda_%s^+$" % direction)
+                ax.set_xlabel(r"$k_%s\delta$" % direction)
                 ax.set_ylabel(r"$k_%sE_{uu}/\langle u'^2\rangle$" % direction)
                 ax.grid(True, which="both", alpha=0.35)
         axes[0].legend()

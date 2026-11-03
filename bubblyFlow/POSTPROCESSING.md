@@ -46,7 +46,9 @@ mpiexec -n 8 python ../extractSpectra.py \
   --input 'interpolatedData/*.npz' \
   --output spectraData \
   --re-tau 280 \
-  --target-yplus 12 280
+  --target-yplus 12 280 \
+  --phase-filter-count 48 \
+  --phase-tolerance 1e-3
 ```
 
 The script performs one-dimensional FFTs only in the homogeneous periodic
@@ -56,11 +58,30 @@ directions.  It writes:
   `Ez(y,kz,component)`, velocity and temperature spectra, variances, and TKE;
 - premultiplied, variance-normalized spectra at the requested wall distances;
 - premultiplied temperature spectra when `T` is present;
+- HIT-style filtered liquid and gas spectra in each homogeneous direction at
+  the requested wall distances;
 - a Parseval error report for normalization verification.
 
-The zero Fourier mode is removed by subtracting each instantaneous x-z plane
-mean.  The saved nonzero spectra therefore describe spatial turbulent
-fluctuations and integrate to the saved plane variance.
+`Ex` and `Ez` store discrete FFT modal energies, whose sum recovers the saved
+plane variance. Premultiplied plots convert modal energy to spectral density
+using `E=P/delta_k`; this matters because the streamwise and spanwise domains
+have different fundamental wavenumber spacings. Their horizontal axes are the
+outer-scaled wavenumbers `kx*delta` and `kz*delta`, where `delta` is the channel
+half-gap. The instantaneous x-z plane
+mean is subtracted before each transform, removing the joint horizontal mean.
+
+The phase spectra use CLS for the liquid fraction and `1-CLS` for the gas
+fraction. They are obtained by differentiating Gaussian-filtered phase kinetic
+energy, rather than Fourier transforming a discontinuously masked velocity.
+This avoids injecting interface-mask content into the high-wavenumber range.
+At every requested wall distance, spectral energies and variances from the
+matching lower and upper channel planes are averaged before normalization; the
+centerline plane is included only once. The filtered phase spectra likewise
+treat the two half-channel planes as separate conditional samples.
+They are saved as `ExLiquidFiltered`, `ExGasFiltered`, `EzLiquidFiltered`, and
+`EzGasFiltered`, with their filter wavenumbers, phase TKE normalizers, mean
+phase fractions, and valid sample counts. Computing them is more expensive
+than the ordinary FFT spectra; reduce `--phase-filter-count` if necessary.
 
 ## 4. Extract statistics and anisotropy
 
@@ -156,14 +177,15 @@ averaging duration and merges duplicate GLL points at element boundaries. It wri
 `inSituBudgetProfiles.npz`, a text table, and a diagnostic plot containing:
 
 - gas fraction, mean velocity, density, and Favre mean velocity;
-- all three surface-tension-force components;
-- total, mean, and fluctuating surface-tension work;
-- instantaneous viscous dissipation and all six viscous stresses;
+- total surface-tension work;
+- time-averaged viscous dissipation and all six viscous stresses;
 - pressure-gradient and gravity power.
 
 The column ordering in `budgetProfiles.dat` is fixed by `channel.udf` and
-checked by the reducer. Old mechanical-only and new thermal layouts are both
-recognized, but do not combine the two layouts in one reduction.
+checked by the reducer. Legacy layouts containing capillary-force components
+and velocity--capillary correlations remain readable, but those redundant
+columns are omitted from newly generated files. Do not combine different
+layouts in one reduction.
 
 Set `collectAvg` near the top of `postProcessing.inc` to `true` only when the
 desired statistical averaging interval begins. Check its value before every

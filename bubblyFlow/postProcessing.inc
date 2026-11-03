@@ -35,9 +35,6 @@ enum BudgetDiagnosticField
   meanRho,
   meanMu,
   meanCls,
-  capillaryForceX,
-  capillaryForceY,
-  capillaryForceZ,
   capillaryPower,
   viscousDissipation,
   pressureGradientPower,
@@ -48,9 +45,6 @@ enum BudgetDiagnosticField
   viscousStress22,
   viscousStress23,
   viscousStress33,
-  velocityCapillaryX,
-  velocityCapillaryY,
-  velocityCapillaryZ,
   densityVelocityX,
   densityVelocityY,
   densityVelocityZ,
@@ -70,10 +64,10 @@ enum BudgetDiagnosticField
 static const std::array<const char *, numberOfBudgetDiagnosticFields>
     budgetFieldNames = {
         "u", "v", "w", "rho", "mu", "cls",
-        "fSigmaX", "fSigmaY", "fSigmaZ", "surfaceTensionPower",
+        "surfaceTensionPower",
         "viscousDissipation", "pressureGradientPower", "gravityPower",
         "tau11", "tau12", "tau13", "tau22", "tau23", "tau33",
-        "uFSigmaX", "vFSigmaY", "wFSigmaZ", "rhoU", "rhoV", "rhoW",
+        "rhoU", "rhoV", "rhoW",
         "T", "T2", "conductivity", "rhoCp", "uT", "vT", "wT",
         "rhoCpUT", "rhoCpVT", "rhoCpWT"};
 
@@ -434,7 +428,7 @@ void collectBudgetProfiles(const dfloat time)
 
     // findpts::eval supports at most 30 fields per call. Keep the complete
     // diagnostic layout contiguous, but interpolate it in compatible batches.
-    static constexpr int maximumInterpolationFields = 30;
+    static constexpr int maximumInterpolationFields = 29;
     for (int firstField = 0;
          firstField < numberOfBudgetDiagnosticFields;
          firstField += maximumInterpolationFields) {
