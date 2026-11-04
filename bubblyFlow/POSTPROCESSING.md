@@ -35,8 +35,8 @@ as `XUPTS02` stores temperature in Nek's dedicated `T` field and has two passive
 scalars: TLS=`s0` and CLS=`s1`. The interpolation script therefore reads
 temperature from `T` and CLS from `s1` explicitly; TLS is not exported.
 
-The default grid stores about 0.19 GiB of raw field values per snapshot. A
-`512 x 257 x 256` production grid stores about 1.51 GiB per snapshot. Choose
+The default grid stores about 0.19 GiB of raw field values per snapshot. The
+`512 x 129 x 320` grid used here stores about 0.94 GiB per snapshot. Choose
 `nx` and `nz` based on the maximum wavenumber needed, not merely disk space.
 
 ## 3. Extract spectra
@@ -48,7 +48,8 @@ mpiexec -n 8 python ../extractSpectra.py \
   --re-tau 280 \
   --target-yplus 12 280 \
   --phase-filter-count 48 \
-  --phase-tolerance 1e-3
+  --phase-tolerance 1e-3 \
+  --relative-spectrum-floor 1e-5
 ```
 
 The script performs one-dimensional FFTs only in the homogeneous periodic
@@ -57,6 +58,7 @@ directions.  It writes:
 - `spectraData/spectra.npz`: `Ex(y,kx,component)`,
   `Ez(y,kz,component)`, velocity and temperature spectra, variances, and TKE;
 - premultiplied, variance-normalized spectra at the requested wall distances;
+- separate non-premultiplied total-TKE spectra in `x` and `z`;
 - premultiplied temperature spectra when `T` is present;
 - HIT-style filtered liquid and gas spectra in each homogeneous direction at
   the requested wall distances;
@@ -67,8 +69,22 @@ plane variance. Premultiplied plots convert modal energy to spectral density
 using `E=P/delta_k`; this matters because the streamwise and spanwise domains
 have different fundamental wavenumber spacings. Their horizontal axes are the
 outer-scaled wavenumbers `kx*delta` and `kz*delta`, where `delta` is the channel
-half-gap. The instantaneous x-z plane
+half-gap; both spectral axes are logarithmic. The instantaneous x-z plane
 mean is subtracted before each transform, removing the joint horizontal mean.
+Only plotted values below `--relative-spectrum-floor` times the peak are
+omitted, suppressing the negligible post-decay interpolation/noise floor; the
+complete untrimmed modal spectra remain in `spectra.npz`. The total-TKE
+spectral densities are also saved as `ExTke` and `EzTke`.
+
+After changing only plotting options, regenerate figures without rereading the
+interpolated snapshots:
+
+```bash
+python ../extractSpectra.py --plot-only \
+  --output spectraData \
+  --target-yplus 12 280 \
+  --relative-spectrum-floor 1e-5
+```
 
 The phase spectra use CLS for the liquid fraction and `1-CLS` for the gas
 fraction. They are obtained by differentiating Gaussian-filtered phase kinetic
@@ -230,15 +246,22 @@ After processing each case separately:
 
 ```bash
 python ../compareCases.py \
-  --single-statistics singlePhase/statisticsData/statistics.npz \
-  --two-statistics twoPhase/statisticsData/statistics.npz \
-  --single-spectra singlePhase/spectraData/spectra.npz \
-  --two-spectra twoPhase/spectraData/spectra.npz \
+  --input singlePhase/spectraData twoPhase/spectraData \
+  --labels 'single phase' 'bubbly' \
+  --target-yplus 12 280 \
   --output comparisonPlots
 ```
 
-The comparison includes liquid TKE, `b11`, Lumley flatness, barycentric-map
-trajectories, and premultiplied streamwise-velocity spectra.
+Each input can be either a spectra directory or its `spectra.npz` file. The
+spectral comparison averages matching lower- and upper-half channel planes.
+It writes one premultiplied component comparison containing `u`, `v`, and `w`
+in consistent colors with a different line style for each input case. It also
+writes a non-premultiplied total-TKE spectrum comparison in both homogeneous
+directions at every requested wall distance. Both use the same relative
+high-wavenumber noise cutoff as `extractSpectra.py`.
+Add `--single-statistics` and `--two-statistics` to also compare liquid TKE,
+`b11`, Lumley flatness, and barycentric-map trajectories. The original
+`--single-spectra` and `--two-spectra` interface remains supported.
 
 ## Interpretation checks
 

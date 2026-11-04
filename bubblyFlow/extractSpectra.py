@@ -22,6 +22,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="interpolatedData/*.npz")
     parser.add_argument("--output", default="spectraData")
+    parser.add_argument("--plot-only", action="store_true",
+                        help="regenerate plots from OUTPUT/spectra.npz")
     parser.add_argument("--re-tau", type=float, default=280.0)
     parser.add_argument("--target-yplus", type=float, nargs="*",
                         default=[12.0, 280.0])
@@ -29,6 +31,9 @@ def parse_arguments():
                         help="log-spaced filter cutoffs for phase spectra")
     parser.add_argument("--phase-tolerance", type=float, default=1.0e-3,
                         help="minimum plane phase fraction")
+    parser.add_argument("--relative-spectrum-floor", type=float,
+                        default=1.0e-5,
+                        help="omit plotted values below this fraction of peak")
     return parser.parse_args()
 
 
@@ -91,6 +96,15 @@ def matching_half_indices(y, yplus, target):
     return np.unique(selected)
 
 
+def resolved_spectrum_mask(wave, values, relative_floor):
+    """Mask zero modes and the negligible post-decay numerical noise floor."""
+    finite_positive = (wave > 0.0) & np.isfinite(values) & (values > 0.0)
+    if not np.any(finite_positive):
+        return finite_positive
+    peak = np.max(values[finite_positive])
+    return finite_positive & (values >= relative_floor*peak)
+
+
 def filtered_phase_spectrum(velocity, fraction, wave, cutoffs, axis,
                             tolerance):
     """HIT-style phase spectrum from differentiated filtered energy.
@@ -149,7 +163,8 @@ def filtered_phase_spectrum(velocity, fraction, wave, cutoffs, axis,
 
 def plot_phase_spectra(output_dir, target_yplus, actual_yplus,
                        kx_filter, kz_filter, ex_liquid, ex_gas,
-                       ez_liquid, ez_gas, tke_liquid, tke_gas):
+                       ez_liquid, ez_gas, tke_liquid, tke_gas,
+                       relative_floor):
     colors = ("#0072B2", "#D55E00")
     for target_index, target in enumerate(target_yplus):
         fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -165,8 +180,10 @@ def plot_phase_spectra(output_dir, target_yplus, actual_yplus,
                      colors[1], "--")):
                 if normalizer > 1.0e-30:
                     premultiplied = wave*spectrum/normalizer
-                    axis.semilogx(
-                        wave, premultiplied,
+                    valid = resolved_spectrum_mask(
+                        wave, premultiplied, relative_floor)
+                    axis.loglog(
+                        wave[valid], premultiplied[valid],
                         color=color, linestyle=style, label=label)
             axis.set_xlabel(r"$k_%s\delta$" % direction)
             axis.set_ylabel(r"$k_%s E_{m}/k_m$" % direction)
@@ -183,7 +200,7 @@ def plot_phase_spectra(output_dir, target_yplus, actual_yplus,
 
 
 def plot_selected_planes(output_dir, y, yplus, kx, kz, ex, ez,
-                         variance, targets):
+                         variance, targets, relative_floor):
     component_names = (r"$u'$", r"$v'$", r"$w'$")
     colors = ("#0072B2", "#D55E00", "#009E73")
 
@@ -206,9 +223,11 @@ def plot_selected_planes(output_dir, y, yplus, kx, kz, ex, ez,
                 premultiplied = (
                     wave[positive]*spectrum[positive, component]
                     /(delta_wave*normalizer))
-                axis.semilogx(
-                    wave[positive],
-                    premultiplied,
+                valid = resolved_spectrum_mask(
+                    wave[positive], premultiplied, relative_floor)
+                axis.loglog(
+                    wave[positive][valid],
+                    premultiplied[valid],
                     color=colors[component],
                     label=component_names[component])
 
@@ -227,7 +246,7 @@ def plot_selected_planes(output_dir, y, yplus, kx, kz, ex, ez,
 
 
 def plot_selected_temperature_planes(output_dir, y, yplus, kx, kz, ex, ez,
-                                     variance, targets):
+                                     variance, targets, relative_floor):
     for target in targets:
         indices = matching_half_indices(y, yplus, target)
         actual = float(np.mean(yplus[indices]))
@@ -243,8 +262,10 @@ def plot_selected_temperature_planes(output_dir, y, yplus, kx, kz, ex, ez,
             normalizer = max(variance_folded, 1.0e-30)
             premultiplied = (wave[positive]*spectrum[positive]
                              /(delta_wave*normalizer))
-            axis.semilogx(wave[positive], premultiplied,
-                          color="#CC0000")
+            valid = resolved_spectrum_mask(
+                wave[positive], premultiplied, relative_floor)
+            axis.loglog(wave[positive][valid], premultiplied[valid],
+                        color="#CC0000")
             axis.set_xlabel(r"$k_%s\delta$" % direction)
             axis.set_ylabel(r"$k_%s E_{TT}/\langle T'^2\rangle$" %
                             direction)
@@ -258,11 +279,85 @@ def plot_selected_temperature_planes(output_dir, y, yplus, kx, kz, ex, ez,
         plt.close(fig)
 
 
+def plot_tke_spectra(output_dir, y, yplus, kx, kz, ex, ez, targets,
+                     relative_floor):
+    """Plot non-premultiplied total TKE spectra."""
+    for target in targets:
+        indices = matching_half_indices(y, yplus, target)
+        actual = float(np.mean(yplus[indices]))
+        ex_folded = np.mean(ex[indices], axis=0)
+        ez_folded = np.mean(ez[indices], axis=0)
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+
+        for modal, wave, axis, direction in (
+                (ex_folded, kx, axes[0], "x"),
+                (ez_folded, kz, axes[1], "z")):
+            delta_wave = wavenumber_spacing(wave)
+            tke_density = 0.5*np.sum(modal, axis=1)/delta_wave
+            valid = resolved_spectrum_mask(
+                wave, tke_density, relative_floor)
+            axis.loglog(wave[valid], tke_density[valid],
+                        color="#0072B2", marker="o", markersize=3,
+                        markevery=max(1, np.count_nonzero(valid)//25),
+                        label="TKE spectrum")
+            axis.set_xlabel(r"$k_%s\delta$" % direction)
+            axis.set_ylabel(r"$E_{k,%s}$" % direction)
+            axis.grid(True, which="both", alpha=0.35)
+        axes[0].legend()
+        fig.suptitle(r"TKE spectra, $y^+=%.2f$" % actual)
+        fig.tight_layout()
+        tag = ("%.2f" % target).replace(".", "p")
+        fig.savefig(os.path.join(
+            output_dir, "tkeSpectrum_yplus_%s.png" % tag), dpi=200)
+        plt.close(fig)
+
+
+def plot_saved_spectra(args):
+    filename = os.path.join(args.output, "spectra.npz")
+    if not os.path.exists(filename):
+        raise RuntimeError("Saved spectra not found: %s" % filename)
+    with np.load(filename) as data:
+        y, yplus = data["y"], data["yplus"]
+        kx, kz = data["kx"], data["kz"]
+        ex, ez, variance = data["Ex"], data["Ez"], data["variance"]
+        plot_selected_planes(
+            args.output, y, yplus, kx, kz, ex, ez, variance,
+            args.target_yplus, args.relative_spectrum_floor)
+        plot_tke_spectra(
+            args.output, y, yplus, kx, kz, ex, ez, args.target_yplus,
+            args.relative_spectrum_floor)
+        if "ExTemperature" in data.files:
+            plot_selected_temperature_planes(
+                args.output, y, yplus, kx, kz,
+                data["ExTemperature"], data["EzTemperature"],
+                data["temperatureVariance"], args.target_yplus,
+                args.relative_spectrum_floor)
+        phase_keys = {
+            "phaseActualYplus", "kxPhaseFilter", "kzPhaseFilter",
+            "ExLiquidFiltered", "ExGasFiltered", "EzLiquidFiltered",
+            "EzGasFiltered", "liquidPhaseTke", "gasPhaseTke"}
+        if phase_keys.issubset(data.files):
+            plot_phase_spectra(
+                args.output, data["phaseTargetYplus"],
+                data["phaseActualYplus"],
+                data["kxPhaseFilter"], data["kzPhaseFilter"],
+                data["ExLiquidFiltered"], data["ExGasFiltered"],
+                data["EzLiquidFiltered"], data["EzGasFiltered"],
+                data["liquidPhaseTke"], data["gasPhaseTke"],
+                args.relative_spectrum_floor)
+    print("Regenerated plots from %s" % filename)
+
+
 def main():
     args = parse_arguments()
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+
+    if args.plot_only:
+        if rank == 0:
+            plot_saved_spectra(args)
+        return
 
     input_files = sorted(glob.glob(args.input))
     if not input_files:
@@ -287,6 +382,8 @@ def main():
         np.mean(yplus[indices]) for indices in target_plane_indices])
     if args.phase_filter_count < 3:
         raise ValueError("phase-filter-count must be at least three")
+    if not 0.0 <= args.relative_spectrum_floor < 1.0:
+        raise ValueError("relative-spectrum-floor must be in [0, 1)")
     kx_filter = np.logspace(
         np.log10(0.5*wavenumber_spacing(kx)),
         np.log10(kx[-1]), args.phase_filter_count)
@@ -442,6 +539,8 @@ def main():
         x=x, y=y, z=z, yplus=yplus,
         kx=kx, kz=kz,
         Ex=ex, Ez=ez,
+        ExTke=0.5*np.sum(ex, axis=2)/wavenumber_spacing(kx),
+        EzTke=0.5*np.sum(ez, axis=2)/wavenumber_spacing(kz),
         variance=variance,
         tke=0.5*np.sum(variance, axis=1),
         reTau=np.array(args.re_tau),
@@ -482,11 +581,15 @@ def main():
     print("Maximum Parseval error: x=%g z=%g" % (error_x, error_z))
 
     plot_selected_planes(args.output, y, yplus, kx, kz,
-                         ex, ez, variance, args.target_yplus)
+                         ex, ez, variance, args.target_yplus,
+                         args.relative_spectrum_floor)
+    plot_tke_spectra(
+        args.output, y, yplus, kx, kz, ex, ez, args.target_yplus,
+        args.relative_spectrum_floor)
     plot_phase_spectra(
         args.output, args.target_yplus, target_actual_yplus,
         kx_filter, kz_filter, ex_liquid, ex_gas, ez_liquid, ez_gas,
-        tke_liquid, tke_gas)
+        tke_liquid, tke_gas, args.relative_spectrum_floor)
     if temperature_available:
         error_tx = np.max(
             np.abs(np.sum(ex_temperature, axis=1) - temperature_variance))
@@ -496,7 +599,8 @@ def main():
               (error_tx, error_tz))
         plot_selected_temperature_planes(
             args.output, y, yplus, kx, kz, ex_temperature, ez_temperature,
-            temperature_variance, args.target_yplus)
+            temperature_variance, args.target_yplus,
+            args.relative_spectrum_floor)
     print("Wrote spectra to %s" % args.output)
 
 
