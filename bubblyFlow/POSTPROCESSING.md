@@ -174,8 +174,12 @@ python ../plotBudgetProfiles.py \
 
 Newly generated files also contain mean and RMS temperature, conductivity,
 volumetric heat capacity, velocity--temperature covariance, and convective
-enthalpy-flux profiles. Old files remain readable but cannot supply thermal
-profiles retroactively.
+enthalpy-flux profiles. Legacy and current files may be combined in one `+`
+group even when their headers differ. Fields are aligned by name: shared
+mechanical quantities use every selected interval, while thermal quantities
+use only intervals from files that contain them. The script prints any shorter
+field-specific averaging durations. Old files cannot supply thermal profiles
+retroactively.
 
 ## 6. Reduce the in-situ two-phase fields
 
