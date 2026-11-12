@@ -2,6 +2,7 @@
 
 from cycler import cycler
 import argparse
+import glob
 import os
 import re
 import time
@@ -31,8 +32,9 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input", nargs="+", default=["hrefine/p7/log3"],
-        help=("Input cases. Join chronological restart logs for one case "
-              "with '+', for example 'run/log1+run/log2+run/log3'"))
+        help=("Input cases. A directory expands to all log* files in natural "
+              "numeric order. Join files/directories for one case with '+', "
+              "for example 'run/log1+run/log2+run/log3'"))
     parser.add_argument("--labels", nargs="+", default=["h/2, N=7"],
                         help="Labels corresponding to the input files")
     parser.add_argument("--output", default="logPlots",
@@ -123,12 +125,36 @@ def read_log(filename, t_min=None, t_max=None):
     return result
 
 
+def natural_sort_key(path):
+    """Sort embedded integers numerically, e.g. log9 before log10."""
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path)]
+
+
+def expand_log_input(input_specification):
+    """Expand directory terms to naturally ordered log restart files."""
+    filenames = []
+    terms = [name.strip() for name in input_specification.split("+")
+             if name.strip()]
+    if not terms:
+        raise ValueError("Empty input specification")
+    for term in terms:
+        if os.path.isdir(term):
+            matches = sorted(
+                (name for name in glob.glob(os.path.join(term, "log*"))
+                 if os.path.isfile(name)),
+                key=natural_sort_key)
+            if not matches:
+                raise RuntimeError("No log* files found in %s" % term)
+            filenames.extend(matches)
+        else:
+            filenames.append(term)
+    return filenames
+
+
 def read_log_group(input_specification, t_min=None, t_max=None):
     """Stitch '+'-separated restart logs, giving later logs precedence."""
-    filenames = [name.strip() for name in input_specification.split("+")
-                 if name.strip()]
-    if not filenames:
-        raise ValueError("Empty input specification")
+    filenames = expand_log_input(input_specification)
 
     combined = {"channel": [], "thermal": [], "runtime": []}
     for filename in filenames:

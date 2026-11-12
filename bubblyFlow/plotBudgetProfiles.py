@@ -2,7 +2,9 @@
 
 from cycler import cycler
 import argparse
+import glob
 import os
+import re
 import time
 
 import numpy as np
@@ -66,8 +68,9 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input", nargs="+", default=["budgetProfiles.dat"],
-        help=("Input profile file, or '+'-separated chronological restart "
-              "files. Supply one item per case to compare multiple cases"))
+        help=("Input profile file, directory containing budgetProfiles*.dat, "
+              "or '+'-separated chronological restart files/directories. "
+              "Supply one item per case to compare multiple cases"))
     parser.add_argument("--labels", nargs="+", default=["case"],
                         help="Labels corresponding to the input cases")
     parser.add_argument("--output", default="budgetProfilePlots")
@@ -130,21 +133,66 @@ def read_profiles(filename):
     return names, blocks
 
 
-def read_profile_group(input_specification):
-    """Stitch '+'-separated files, giving later restart files precedence."""
-    filenames = [name.strip() for name in input_specification.split("+")
-                 if name.strip()]
-    if not filenames:
-        raise ValueError("Empty input specification")
+def natural_sort_key(path):
+    """Sort embedded integers numerically, e.g. file9 before file10."""
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path)]
 
-    reference_names = None
+
+def expand_profile_input(input_specification):
+    """Expand directory terms to naturally ordered profile restart files."""
+    filenames = []
+    terms = [name.strip() for name in input_specification.split("+")
+             if name.strip()]
+    if not terms:
+        raise ValueError("Empty input specification")
+    for term in terms:
+        if os.path.isdir(term):
+            matches = sorted(
+                (name for name in glob.glob(
+                    os.path.join(term, "budgetProfiles*.dat"))
+                 if os.path.isfile(name)),
+                key=natural_sort_key)
+            if not matches:
+                raise RuntimeError(
+                    "No budgetProfiles*.dat files found in %s" % term)
+            filenames.extend(matches)
+        else:
+            filenames.append(term)
+    return filenames
+
+
+def read_profile_group(input_specification):
+    """Stitch restart files and align legacy/current fields by name."""
+    filenames = expand_profile_input(input_specification)
+
+    reference_names = []
     combined = []
     for filename in filenames:
         names, blocks = read_profiles(filename)
-        if reference_names is None:
-            reference_names = names
-        elif names != reference_names:
-            raise ValueError("Profile fields differ in %s" % filename)
+
+        union_names = reference_names + [name for name in names
+                                         if name not in reference_names]
+        if union_names != reference_names:
+            old_indices = {name: index for index, name in
+                           enumerate(reference_names)}
+            for block in combined:
+                aligned = np.full((block["points"], len(union_names)),
+                                  np.nan)
+                for index, name in enumerate(union_names):
+                    if name in old_indices:
+                        aligned[:, index] = block["values"][:,
+                                                           old_indices[name]]
+                block["values"] = aligned
+            reference_names = union_names
+
+        new_indices = {name: index for index, name in enumerate(names)}
+        for block in blocks:
+            aligned = np.full((block["points"], len(reference_names)), np.nan)
+            for index, name in enumerate(reference_names):
+                if name in new_indices:
+                    aligned[:, index] = block["values"][:, new_indices[name]]
+            block["values"] = aligned
 
         # A block represents the half-open averaging interval
         # (intervalEnd-duration, intervalEnd].  A later restart file replaces
@@ -174,6 +222,7 @@ def select_profiles(blocks, t_min=None, t_max=None, last=False):
 def average_profiles(names, blocks):
     reference_y = blocks[0]["values"][:, 0]
     weighted_sum = np.zeros_like(blocks[0]["values"])
+    field_duration = np.zeros_like(blocks[0]["values"])
     total_duration = 0.0
 
     for block in blocks:
@@ -181,15 +230,24 @@ def average_profiles(names, blocks):
         if values.shape != weighted_sum.shape or not np.allclose(
                 values[:, 0], reference_y, rtol=1.0e-10, atol=1.0e-12):
             raise ValueError("Profile grids differ between output intervals")
-        weighted_sum += block["duration"]*values
+        available = np.isfinite(values)
+        weighted_sum += block["duration"]*np.where(available, values, 0.0)
+        field_duration += block["duration"]*available
         total_duration += block["duration"]
 
     if total_duration <= 0.0:
         raise ValueError("Selected intervals have zero averaging duration")
-    averaged = weighted_sum/total_duration
+    averaged = np.full_like(weighted_sum, np.nan)
+    np.divide(weighted_sum, field_duration, out=averaged,
+              where=field_duration > 0.0)
     averaged[:, 0] = reference_y
-    return ({name: averaged[:, index]
-             for index, name in enumerate(names)}, total_duration)
+    profile = {name: averaged[:, index]
+               for index, name in enumerate(names)
+               if np.any(field_duration[:, index] > 0.0)}
+    durations = {name: float(np.max(field_duration[:, index]))
+                 for index, name in enumerate(names)
+                 if np.any(field_duration[:, index] > 0.0)}
+    return profile, total_duration, durations
 
 
 def plot_profiles(output_dir, profiles, case_labels):
@@ -288,35 +346,42 @@ def main():
 
     profiles = []
     metadata = []
-    reference_names = None
+    profile_names = []
     for input_specification, label in zip(args.input, args.labels):
         names, blocks = read_profile_group(input_specification)
-        if reference_names is None:
-            reference_names = names
-        elif names != reference_names:
-            raise ValueError("Profile fields differ between cases")
         selected = select_profiles(
             blocks, args.t_min, args.t_max, args.last)
-        profile, duration = average_profiles(names, selected)
+        profile, duration, field_durations = average_profiles(names, selected)
         profiles.append(profile)
+        profile_names.append([name for name in names if name in profile])
         metadata.append((input_specification, label, len(blocks),
-                         len(selected), duration))
+                         len(selected), duration, field_durations))
 
     plot_profiles(args.output, profiles, args.labels)
     for case_index, (profile, details) in enumerate(
             zip(profiles, metadata)):
-        input_specification, label, block_count, selected_count, duration = \
-            details
+        (input_specification, label, block_count, selected_count, duration,
+         field_durations) = details
         suffix = "" if len(profiles) == 1 else "_%d" % case_index
+        names = profile_names[case_index]
         output_values = np.column_stack(
-            [profile[name] for name in reference_names])
+            [profile[name] for name in names])
         np.savetxt(
             os.path.join(args.output, "averagedProfile%s.dat" % suffix),
-            output_values, header=" ".join(reference_names))
+            output_values, header=" ".join(names))
         print("Read %d intervals from %s (%s)" %
               (block_count, input_specification, label))
         print("Averaged %d selected intervals over duration %g" %
               (selected_count, duration))
+        shorter = [(name, value) for name, value in field_durations.items()
+                   if value < duration - 1.0e-12*max(1.0, duration)]
+        if shorter:
+            grouped = {}
+            for name, value in shorter:
+                grouped.setdefault(value, []).append(name)
+            for value, names_at_duration in sorted(grouped.items()):
+                print("  duration %g for fields: %s" %
+                      (value, ", ".join(names_at_duration)))
     print("Wrote comparison plots and averaged profile data to %s" %
           args.output)
 
