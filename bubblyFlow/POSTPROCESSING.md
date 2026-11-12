@@ -126,7 +126,12 @@ It writes:
   phase-conditioned temperature statistics when `T` is present;
 - `temperatureProfile.dat` and `temperatureStatistics.png` when `T` is
   present;
-- `anisotropyProfile.dat` and summary figures for both modes;
+- `anisotropyProfile.dat`, `anisotropyProfiles.png`, the barycentric map, and
+  the `(-II,III)` turbulence-invariant triangle;
+- unconditioned, liquid-conditioned, and gas-conditioned TKE profiles;
+- the streamwise mean-velocity profile;
+- separate diagonal and off-diagonal Reynolds-stress figures, with the two
+  channel halves folded using the appropriate component symmetry;
 - conventional channel TKE-budget terms, `tkeBudget.dat`, and
   `tkeBudget.png` for a single-phase data set only.
 
@@ -134,6 +139,37 @@ The conventional budget includes production, dissipation, turbulent
 transport, pressure transport, and viscous diffusion. It is generated only
 for the constant-property single-phase channel. If gas is detected, the
 second budget pass is skipped: no two-phase budget or residual is written.
+An otherwise single-phase run containing a frozen nonuniform CLS field is
+also detected as two phase. Its unconditioned velocity statistics remain
+usable, but its CLS-conditioned "gas" statistics are only mask-conditioned
+diagnostics and a conventional single-phase budget is not generated.
+
+All figures can be regenerated from the saved arrays without rereading the
+interpolated snapshots:
+
+```bash
+python ../extractStatistics.py --plot-only \
+  --statistics statisticsData/statistics.npz \
+  --output statisticsData
+```
+
+Multiple saved statistics files can be compared directly:
+
+```bash
+python extractStatistics.py --plot-only \
+  --statistics singlePhase/p9/statisticsData/statistics.npz \
+               hbase/p9/statisticsData/statistics.npz \
+  --labels 'single phase' 'two phase' \
+  --output statisticsComparison
+```
+
+The comparison includes unconditioned TKE, streamwise mean velocity versus
+`y/delta`, diagonal and off-diagonal Reynolds stresses, anisotropy profiles,
+Lumley flatness, barycentric and turbulence-invariant triangles, and
+temperature statistics when every input contains temperature. Triangle color
+represents `y+`; marker shape identifies the case. The triangle trajectories
+use one channel half to avoid plotting duplicate upper- and lower-wall paths.
+No MPI launcher is needed in `--plot-only` mode.
 
 With checkpoints restricted to `u`, `v`, `w`, `p`, the dedicated temperature
 field `T`, and the two passive scalars TLS and CLS, the two-phase-only terms
@@ -146,27 +182,29 @@ unchanged.
 
 ## 5. Plot and combine the in-situ two-phase profiles
 
+Run the plotting commands in this section from the `bubblyFlow` directory.
+
 Each block in `budgetProfiles.dat` is already x-z planar averaged and time
-averaged over the duration recorded in its interval header. Combine
-chronological restart files for one case with `+`, and use `--t-min` to select
-the statistically stationary interval:
+averaged over the duration recorded in its interval header. An input directory
+automatically expands to every `budgetProfiles*.dat` file in natural numeric
+order. Use `--t-min` to select the statistically stationary interval:
 
 ```bash
-python ../plotBudgetProfiles.py \
-  --input 'run1/budgetProfiles.dat+run2/budgetProfiles.dat' \
+python plotBudgetProfiles.py \
+  --input run1 \
   --labels 'N=7' \
   --t-min 20 \
   --output budgetProfilePlots
 ```
 
-Later files replace overlapping intervals from earlier files. Several meshes
-can be compared without averaging them together:
+Explicit files and `+`-separated files or directories remain supported, for
+example `run1/budgetProfiles2.dat+run2`. Later files replace overlapping
+intervals from earlier files. Several meshes can be compared without averaging
+them together:
 
 ```bash
-python ../plotBudgetProfiles.py \
-  --input 'hbase/p7/budgetProfiles.dat' \
-          'hbase/p9/budgetProfiles.dat' \
-          'hrefine/p7/budgetProfiles.dat' \
+python plotBudgetProfiles.py \
+  --input hbase/p7 hbase/p9 hrefine/p7 \
   --labels 'N=7' 'N=9' 'h/2, N=7' \
   --t-min 20 \
   --output budgetProfilePlots
@@ -224,25 +262,30 @@ production terms on the same statistical interval.
 
 ## 7. Plot monitor and runtime histories
 
+Run these comparison commands from the `bubblyFlow` directory.
+
 Use `plotBubbly.py` to compare the time histories in `bubbly.dat`:
 
 ```bash
-python ../plotBubbly.py \
+python plotBubbly.py \
   --input hbase/p7/bubbly.dat hbase/p9/bubbly.dat hrefine/p7/bubbly.dat \
   --labels 'N=7' 'N=9' 'h/2, N=7' \
   --output bubblyPlots
 ```
 
 Use `plotLog.py` for CHANNEL, THERMAL, y+, timestep, CFL, and per-step runtime
-diagnostics. Chronological restart logs for one case use the same `+` syntax:
+diagnostics. A directory input automatically reads every `log*` file in
+natural numeric order (`log9` before `log10`):
 
 ```bash
-python ../plotLog.py \
-  --input 'log1+log2+log3' \
+python plotLog.py \
+  --input hrefine/p7 \
   --labels 'h/2, N=7' \
   --t-min 20 \
   --output logPlots
 ```
+
+Explicit logs and `+`-separated files or directories remain supported.
 
 ## 8. Compare single- and two-phase cases
 

@@ -23,6 +23,16 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="interpolatedData/*.npz")
     parser.add_argument("--output", default="statisticsData")
+    parser.add_argument(
+        "--plot-only", action="store_true",
+        help="Regenerate plots from an existing statistics.npz file")
+    parser.add_argument(
+        "--statistics", nargs="+", default=None,
+        help=("One or more statistics.npz files used with --plot-only; "
+              "defaults to OUTPUT/statistics.npz"))
+    parser.add_argument(
+        "--labels", nargs="+", default=None,
+        help="Case labels for multiple --statistics files")
     parser.add_argument("--re", type=float, default=5600.0,
                         help="Re based on full channel height")
     parser.add_argument("--re-tau", type=float, default=280.0)
@@ -119,7 +129,7 @@ def phase_temperature_results(weight, first, second,
             "rms": np.sqrt(variance), "velocityCovariance": covariance}
 
 
-def plot_results(output, y, yplus, liquid, gas, budget=None,
+def plot_results(output, y, yplus, all_statistics, liquid, gas, budget=None,
                  temperature=None):
     upper = y >= -1.0e-12
     order = np.argsort(yplus[upper])
@@ -152,6 +162,64 @@ def plot_results(output, y, yplus, liquid, gas, budget=None,
     fig.savefig(os.path.join(output, "anisotropyProfiles.png"), dpi=200)
     plt.close(fig)
 
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.semilogx(yp, symmetric(all_statistics["tke"]),
+                label="unconditioned")
+    ax.semilogx(yp, symmetric(liquid["tke"]), label="liquid")
+    if np.any(np.isfinite(gas["tke"])):
+        ax.semilogx(yp, symmetric(gas["tke"]), label="gas")
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel(r"$k$")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "tkeProfiles.png"), dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot(all_statistics["meanVelocity"][:, 0], y,
+            label=r"$\langle u\rangle$")
+    ax.set_xlabel(r"$\langle u\rangle$")
+    ax.set_ylabel(r"$y/\delta$")
+    ax.grid(True, alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "meanVelocityProfile.png"), dpi=200)
+    plt.close(fig)
+
+    reynolds = all_statistics["reynolds"]
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for first, second, label in (
+            (0, 0, r"$\langle u'u'\rangle$"),
+            (1, 1, r"$\langle v'v'\rangle$"),
+            (2, 2, r"$\langle w'w'\rangle$")):
+        ax.semilogx(yp, symmetric(reynolds[:, first, second]), label=label)
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel("Reynolds normal stress")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "reynoldsStressDiagonal.png"), dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for first, second, parity, label in (
+            (0, 1, -1.0, r"$\langle u'v'\rangle$"),
+            (0, 2, 1.0, r"$\langle u'w'\rangle$"),
+            (1, 2, -1.0, r"$\langle v'w'\rangle$")):
+        folded = 0.5*(reynolds[:, first, second] +
+                      parity*reynolds[::-1, first, second])
+        ax.semilogx(yp, folded[upper][order], label=label)
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel("Reynolds shear stress")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "reynoldsStressOffDiagonal.png"),
+                dpi=200)
+    plt.close(fig)
+
     fig, ax = plt.subplots(figsize=(6, 5.4))
     triangle_x = [0.0, 1.0, 0.5, 0.0]
     triangle_y = [0.0, 0.0, np.sqrt(3.0)/2.0, 0.0]
@@ -169,6 +237,43 @@ def plot_results(output, y, yplus, liquid, gas, budget=None,
     ax.set_axis_off()
     fig.tight_layout()
     fig.savefig(os.path.join(output, "barycentricLiquid.png"), dpi=200)
+    plt.close(fig)
+
+    # Turbulence-invariant triangle in the (-II, III) representation used by
+    # Saini and Bolotnov, Nuclear Technology 208 (2022), Fig. 16.  Use one
+    # channel half so that the locus corresponds to a single wall-normal path.
+    minus_ii = -liquid["II"][upper][order]
+    iii = liquid["III"][upper][order]
+    valid = np.isfinite(minus_ii) & np.isfinite(iii)
+    fig, ax = plt.subplots(figsize=(6.6, 5.4))
+
+    axisymmetric_positive = np.linspace(0.0, 1.0/3.0, 300)
+    axisymmetric_negative = np.linspace(0.0, 1.0/12.0, 160)
+    coefficient = 2.0/(3.0*np.sqrt(3.0))
+    ax.plot(coefficient*axisymmetric_positive**1.5,
+            axisymmetric_positive, "k--", linewidth=1.1)
+    ax.plot(-coefficient*axisymmetric_negative**1.5,
+            axisymmetric_negative, "k--", linewidth=1.1)
+    two_component = np.linspace(1.0/12.0, 1.0/3.0, 220)
+    ax.plot(two_component/3.0 - 1.0/27.0, two_component,
+            "k--", linewidth=1.1)
+
+    points = ax.scatter(iii[valid], minus_ii[valid], c=yp[valid],
+                        cmap="viridis", s=24, zorder=3)
+    fig.colorbar(points, ax=ax, label=r"$y^+$")
+    ax.text(-0.0065, 0.012, "isotropic", fontsize=9)
+    ax.text(2.0/27.0, 1.0/3.0, "1C", ha="left", va="bottom",
+            fontsize=9)
+    ax.text(-1.0/108.0 + 0.001, 1.0/12.0, "2C", ha="left", va="bottom",
+            fontsize=9)
+    ax.set_xlabel(r"$III$")
+    ax.set_ylabel(r"$-II$")
+    ax.set_xlim(-0.014, 0.080)
+    ax.set_ylim(-0.005, 0.35)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "invariantTriangleLiquid.png"),
+                dpi=200)
     plt.close(fig)
 
     if budget is not None:
@@ -212,11 +317,341 @@ def plot_results(output, y, yplus, liquid, gas, budget=None,
         plt.close(fig)
 
 
+def load_saved_statistics(filename):
+    """Load the statistics needed to regenerate plots."""
+    with np.load(filename) as data:
+        y = data["y"]
+        yplus = data["yplus"]
+        all_statistics = {
+            "tke": data["tke"],
+            "reynolds": data["reynoldsStress"],
+            "meanVelocity": data["meanVelocity"],
+        }
+        liquid = {
+            "tke": data["liquidTke"],
+            "anisotropy": data["liquidAnisotropy"],
+            "flatness": data["liquidFlatness"],
+            "barycentricX": data["liquidBarycentricX"],
+            "barycentricY": data["liquidBarycentricY"],
+            "II": data["liquidII"],
+            "III": data["liquidIII"],
+        }
+        gas = {
+            "tke": data["gasTke"],
+            "flatness": data["gasFlatness"],
+        }
+
+        budget_names = (
+            "production", "dissipation", "turbulentTransport",
+            "pressureTransport", "viscousDiffusion", "residual")
+        budget = None
+        if all("budget" + name[0].upper() + name[1:] in data.files
+               for name in budget_names):
+            budget = {
+                name: data["budget" + name[0].upper() + name[1:]]
+                for name in budget_names
+            }
+
+        temperature = None
+        temperature_keys = (
+            "meanTemperature", "temperatureRms", "turbulentHeatFlux")
+        if all(name in data.files for name in temperature_keys):
+            temperature = {
+                "all": {
+                    "mean": data["meanTemperature"],
+                    "rms": data["temperatureRms"],
+                    "velocityCovariance": data["turbulentHeatFlux"],
+                }
+            }
+
+    return (y, yplus, all_statistics, liquid, gas, budget, temperature)
+
+
+def plot_saved_statistics(filename, output):
+    """Regenerate all available plots without rereading field snapshots."""
+    values = load_saved_statistics(filename)
+    os.makedirs(output, exist_ok=True)
+    plot_results(output, *values)
+
+
+def plot_saved_comparison(filenames, labels, output):
+    """Compare invariant trajectories and TKE from saved statistics."""
+    datasets = [load_saved_statistics(filename) for filename in filenames]
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    linestyles = ("-", "--", ":", "-.")
+    markers = ("o", "s", "^", "D")
+    maximum_yplus = max(float(np.nanmax(values[1])) for values in datasets)
+    yplus_norm = mpl.colors.Normalize(vmin=0.0, vmax=maximum_yplus)
+    yplus_cmap = plt.get_cmap("viridis")
+
+    fig, ax = plt.subplots(figsize=(6.8, 5.4))
+    positive = np.linspace(0.0, 1.0/3.0, 300)
+    negative = np.linspace(0.0, 1.0/12.0, 160)
+    coefficient = 2.0/(3.0*np.sqrt(3.0))
+    ax.plot(coefficient*positive**1.5, positive, "k--", linewidth=1.0)
+    ax.plot(-coefficient*negative**1.5, negative, "k--", linewidth=1.0)
+    two_component = np.linspace(1.0/12.0, 1.0/3.0, 220)
+    ax.plot(two_component/3.0 - 1.0/27.0, two_component,
+            "k--", linewidth=1.0)
+    for index, (values, label) in enumerate(zip(datasets, labels)):
+        y, yplus, _, liquid, _, _, _ = values
+        upper = y >= -1.0e-12
+        order = np.argsort(yplus[upper])
+        iii = liquid["III"][upper][order]
+        minus_ii = -liquid["II"][upper][order]
+        valid = np.isfinite(iii) & np.isfinite(minus_ii)
+        ax.scatter(iii[valid], minus_ii[valid],
+                   c=yplus[upper][order][valid], cmap=yplus_cmap,
+                   norm=yplus_norm, marker=markers[index % len(markers)],
+                   s=27, linewidths=0.55, edgecolors="black", label=label,
+                   zorder=3)
+    ax.text(-0.0065, 0.012, "isotropic", fontsize=9)
+    ax.text(2.0/27.0, 1.0/3.0, "1C", ha="left", va="bottom",
+            fontsize=9)
+    ax.text(-1.0/108.0 + 0.001, 1.0/12.0, "2C", ha="left",
+            va="bottom", fontsize=9)
+    ax.set_xlabel(r"$III$")
+    ax.set_ylabel(r"$-II$")
+    ax.set_xlim(-0.014, 0.080)
+    ax.set_ylim(-0.005, 0.35)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.colorbar(mpl.cm.ScalarMappable(norm=yplus_norm, cmap=yplus_cmap),
+                 ax=ax, label=r"$y^+$")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "invariantTriangleComparison.png"),
+                dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for index, (values, label) in enumerate(zip(datasets, labels)):
+        y, yplus, all_statistics, _, _, _, _ = values
+        upper = y >= -1.0e-12
+        order = np.argsort(yplus[upper])
+        folded_tke = 0.5*(all_statistics["tke"] +
+                          all_statistics["tke"][::-1])
+        ax.semilogx(
+            yplus[upper][order], folded_tke[upper][order], label=label,
+            color=colors[index % len(colors)],
+            linestyle=linestyles[index % len(linestyles)], linewidth=2.0)
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel(r"unconditioned $k$")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "tkeComparison.png"), dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for case_index, (values, label) in enumerate(zip(datasets, labels)):
+        y, _, all_statistics, _, _, _, _ = values
+        ax.plot(
+            all_statistics["meanVelocity"][:, 0], y, label=label,
+            color=colors[case_index % len(colors)],
+            linestyle=linestyles[case_index % len(linestyles)],
+            linewidth=2.0)
+    ax.set_xlabel(r"$\langle u\rangle$")
+    ax.set_ylabel(r"$y/\delta$")
+    ax.grid(True, alpha=0.35)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "meanVelocityComparison.png"), dpi=200)
+    plt.close(fig)
+
+    stress_components = (
+        (0, 0, r"$\langle u'u'\rangle$"),
+        (1, 1, r"$\langle v'v'\rangle$"),
+        (2, 2, r"$\langle w'w'\rangle$"),
+    )
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for case_index, (values, case_label) in enumerate(zip(datasets, labels)):
+        y, yplus, all_statistics, _, _, _, _ = values
+        upper = y >= -1.0e-12
+        order = np.argsort(yplus[upper])
+        reynolds = all_statistics["reynolds"]
+        for component_index, (first, second, component_label) in enumerate(
+                stress_components):
+            folded = 0.5*(reynolds[:, first, second] +
+                          reynolds[::-1, first, second])
+            ax.semilogx(
+                yplus[upper][order], folded[upper][order],
+                color=colors[component_index % len(colors)],
+                linestyle=linestyles[case_index % len(linestyles)],
+                label="%s, %s" % (component_label, case_label))
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel("Reynolds normal stress")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(output, "reynoldsStressDiagonalComparison.png"),
+        dpi=200)
+    plt.close(fig)
+
+    shear_components = (
+        (0, 1, -1.0, r"$\langle u'v'\rangle$"),
+        (0, 2, 1.0, r"$\langle u'w'\rangle$"),
+        (1, 2, -1.0, r"$\langle v'w'\rangle$"),
+    )
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for case_index, (values, case_label) in enumerate(zip(datasets, labels)):
+        y, yplus, all_statistics, _, _, _, _ = values
+        upper = y >= -1.0e-12
+        order = np.argsort(yplus[upper])
+        reynolds = all_statistics["reynolds"]
+        for component_index, (first, second, parity,
+                              component_label) in enumerate(shear_components):
+            folded = 0.5*(reynolds[:, first, second] +
+                          parity*reynolds[::-1, first, second])
+            ax.semilogx(
+                yplus[upper][order], folded[upper][order],
+                color=colors[component_index % len(colors)],
+                linestyle=linestyles[case_index % len(linestyles)],
+                label="%s, %s" % (component_label, case_label))
+    ax.axhline(0.0, color="black", linewidth=0.8)
+    ax.set_xlabel(r"$y^+$")
+    ax.set_ylabel("Reynolds shear stress")
+    ax.grid(True, which="both", alpha=0.35)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(
+        os.path.join(output, "reynoldsStressOffDiagonalComparison.png"),
+        dpi=200)
+    plt.close(fig)
+
+    component_colors = colors[:3]
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    for case_index, (values, label) in enumerate(zip(datasets, labels)):
+        y, yplus, _, liquid, gas, _, _ = values
+        upper = y >= -1.0e-12
+        order = np.argsort(yplus[upper])
+        yp = yplus[upper][order]
+
+        def symmetric(profile):
+            return (0.5*(profile + profile[::-1]))[upper][order]
+
+        for component, component_label in enumerate(
+                (r"$b_{11}$", r"$b_{22}$", r"$b_{33}$")):
+            axes[0].semilogx(
+                yp, symmetric(liquid["anisotropy"][:, component, component]),
+                color=component_colors[component],
+                linestyle=linestyles[case_index % len(linestyles)],
+                label="%s, %s" % (component_label, label))
+        axes[1].semilogx(
+            yp, symmetric(liquid["flatness"]),
+            color=colors[case_index % len(colors)], linestyle="-",
+            label="liquid, %s" % label)
+        if np.any(np.isfinite(gas["flatness"])):
+            axes[1].semilogx(
+                yp, symmetric(gas["flatness"]),
+                color=colors[case_index % len(colors)], linestyle=":",
+                label="gas, %s" % label)
+    axes[0].axhline(0.0, color="black", linewidth=0.8)
+    axes[0].set_xlabel(r"$y^+$")
+    axes[0].set_ylabel(r"$b_{ii}$")
+    axes[1].set_xlabel(r"$y^+$")
+    axes[1].set_ylabel(r"Lumley flatness $F$")
+    axes[1].set_ylim(-0.05, 1.05)
+    for axis in axes:
+        axis.grid(True, which="both", alpha=0.35)
+        axis.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "anisotropyProfilesComparison.png"),
+                dpi=200)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6.4, 5.4))
+    triangle_x = [0.0, 1.0, 0.5, 0.0]
+    triangle_y = [0.0, 0.0, np.sqrt(3.0)/2.0, 0.0]
+    ax.plot(triangle_x, triangle_y, "k-", linewidth=1.3)
+    for case_index, (values, label) in enumerate(zip(datasets, labels)):
+        y, yplus, _, liquid, _, _, _ = values
+        upper = y >= -1.0e-12
+        valid = (upper & np.isfinite(liquid["barycentricX"]) &
+                 np.isfinite(liquid["barycentricY"]))
+        ax.scatter(
+            liquid["barycentricX"][valid],
+            liquid["barycentricY"][valid], c=yplus[valid],
+            cmap=yplus_cmap, norm=yplus_norm,
+            marker=markers[case_index % len(markers)], s=27,
+            linewidths=0.55, edgecolors="black", label=label)
+    ax.text(1.02, 0.0, "1C", va="center")
+    ax.text(-0.08, 0.0, "2C", va="center")
+    ax.text(0.5, np.sqrt(3.0)/2.0 + 0.035, "3C / isotropic",
+            ha="center")
+    fig.colorbar(mpl.cm.ScalarMappable(norm=yplus_norm, cmap=yplus_cmap),
+                 ax=ax, label=r"$y^+$")
+    ax.legend(loc="best")
+    ax.set_aspect("equal")
+    ax.set_xlim(-0.1, 1.1)
+    ax.set_ylim(-0.05, 0.95)
+    ax.set_axis_off()
+    fig.tight_layout()
+    fig.savefig(os.path.join(output, "barycentricComparison.png"), dpi=200)
+    plt.close(fig)
+
+    if all(values[6] is not None for values in datasets):
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        quantity_colors = colors[:3]
+        for case_index, (values, label) in enumerate(zip(datasets, labels)):
+            y, _, _, _, _, _, temperature = values
+            style = linestyles[case_index % len(linestyles)]
+            axes[0].plot(
+                temperature["all"]["mean"], y,
+                color=quantity_colors[0], linestyle=style,
+                label=r"$\langle T\rangle$, %s" % label)
+            axes[0].plot(
+                temperature["all"]["rms"], y,
+                color=quantity_colors[1], linestyle=style,
+                label=r"$T_{rms}$, %s" % label)
+            for component, component_label in enumerate(
+                    (r"$\langle u'T'\rangle$", r"$\langle v'T'\rangle$",
+                     r"$\langle w'T'\rangle$")):
+                axes[1].plot(
+                    temperature["all"]["velocityCovariance"][:, component],
+                    y, color=quantity_colors[component], linestyle=style,
+                    label="%s, %s" % (component_label, label))
+        axes[0].set_xlabel("temperature statistic")
+        axes[0].set_ylabel(r"$y/\delta$")
+        axes[1].set_xlabel("velocity--temperature covariance")
+        for axis in axes:
+            axis.grid(True, alpha=0.35)
+            axis.legend(fontsize=8)
+        fig.tight_layout()
+        fig.savefig(
+            os.path.join(output, "temperatureStatisticsComparison.png"),
+            dpi=200)
+        plt.close(fig)
+
+
 def main():
     args = arguments()
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+    if args.plot_only:
+        if rank == 0:
+            statistics_files = (args.statistics if args.statistics else
+                                [os.path.join(args.output,
+                                              "statistics.npz")])
+            for statistics_file in statistics_files:
+                if not os.path.isfile(statistics_file):
+                    raise RuntimeError("Statistics file not found: %s" %
+                                       statistics_file)
+            if args.labels is not None and \
+                    len(args.labels) != len(statistics_files):
+                raise RuntimeError(
+                    "--labels must match the number of --statistics files")
+            labels = (args.labels if args.labels is not None else
+                      [os.path.basename(os.path.dirname(filename))
+                       for filename in statistics_files])
+            os.makedirs(args.output, exist_ok=True)
+            if len(statistics_files) == 1:
+                plot_saved_statistics(statistics_files[0], args.output)
+            else:
+                plot_saved_comparison(statistics_files, labels, args.output)
+            print("Regenerated plots in %s" % args.output)
+        return
     files = sorted(glob.glob(args.input))
     if not files:
         raise RuntimeError("No files match %r" % args.input)
@@ -446,8 +881,9 @@ def main():
                    header=("y yplus production minusDissipation "
                            "turbulentTransport pressureTransport "
                            "viscousDiffusion resolvedResidual"))
-    plot_results(args.output, y, yplus, statistics["liquid"],
-                 statistics["gas"], budget, temperature_statistics)
+    plot_results(args.output, y, yplus, statistics["all"],
+                 statistics["liquid"], statistics["gas"], budget,
+                 temperature_statistics)
     print("Wrote statistics to %s" % args.output)
     if two_phase:
         print("Two-phase case detected: no TKE budget was generated because "

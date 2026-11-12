@@ -2,7 +2,9 @@
 
 from cycler import cycler
 import argparse
+import glob
 import os
+import re
 import time
 
 import numpy as np
@@ -66,8 +68,9 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input", nargs="+", default=["budgetProfiles.dat"],
-        help=("Input profile file, or '+'-separated chronological restart "
-              "files. Supply one item per case to compare multiple cases"))
+        help=("Input profile file, directory containing budgetProfiles*.dat, "
+              "or '+'-separated chronological restart files/directories. "
+              "Supply one item per case to compare multiple cases"))
     parser.add_argument("--labels", nargs="+", default=["case"],
                         help="Labels corresponding to the input cases")
     parser.add_argument("--output", default="budgetProfilePlots")
@@ -130,12 +133,38 @@ def read_profiles(filename):
     return names, blocks
 
 
+def natural_sort_key(path):
+    """Sort embedded integers numerically, e.g. file9 before file10."""
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path)]
+
+
+def expand_profile_input(input_specification):
+    """Expand directory terms to naturally ordered profile restart files."""
+    filenames = []
+    terms = [name.strip() for name in input_specification.split("+")
+             if name.strip()]
+    if not terms:
+        raise ValueError("Empty input specification")
+    for term in terms:
+        if os.path.isdir(term):
+            matches = sorted(
+                (name for name in glob.glob(
+                    os.path.join(term, "budgetProfiles*.dat"))
+                 if os.path.isfile(name)),
+                key=natural_sort_key)
+            if not matches:
+                raise RuntimeError(
+                    "No budgetProfiles*.dat files found in %s" % term)
+            filenames.extend(matches)
+        else:
+            filenames.append(term)
+    return filenames
+
+
 def read_profile_group(input_specification):
     """Stitch restart files and align legacy/current fields by name."""
-    filenames = [name.strip() for name in input_specification.split("+")
-                 if name.strip()]
-    if not filenames:
-        raise ValueError("Empty input specification")
+    filenames = expand_profile_input(input_specification)
 
     reference_names = []
     combined = []
