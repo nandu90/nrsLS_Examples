@@ -9,6 +9,7 @@ reconstructed and is therefore deliberately not produced.
 import argparse
 import glob
 import os
+import re
 import time
 
 from mpi4py import MPI
@@ -21,7 +22,10 @@ import matplotlib.pyplot as plt
 
 def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", default="interpolatedData/*.npz")
+    parser.add_argument(
+        "--input", nargs="+", default=["interpolatedData/*.npz"],
+        help=("One or more chronological snapshot globs, files, or "
+              "directories. Later inputs replace overlapping restart times"))
     parser.add_argument("--output", default="statisticsData")
     parser.add_argument(
         "--plot-only", action="store_true",
@@ -37,6 +41,40 @@ def arguments():
                         help="Re based on full channel height")
     parser.add_argument("--re-tau", type=float, default=280.0)
     return parser.parse_args()
+
+
+def natural_sort_key(path):
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path)]
+
+
+def snapshot_time(filename):
+    with np.load(filename) as data:
+        return float(data["time"])
+
+
+def resolve_snapshot_inputs(input_specifications):
+    """Expand and stitch chronological restart segments by snapshot time."""
+    stitched = []
+    for specification in input_specifications:
+        if os.path.isdir(specification):
+            matches = glob.glob(os.path.join(specification, "*.npz"))
+        else:
+            matches = glob.glob(specification)
+        matches = sorted((name for name in matches if os.path.isfile(name)),
+                         key=natural_sort_key)
+        if not matches:
+            raise RuntimeError("No files match %r" % specification)
+        segment = sorted(((snapshot_time(name), name) for name in matches),
+                         key=lambda item: (item[0], natural_sort_key(item[1])))
+        restart_time = segment[0][0]
+        tolerance = 1.0e-12*max(1.0, abs(restart_time))
+        stitched = [item for item in stitched
+                    if item[0] < restart_time - tolerance]
+        stitched.extend(segment)
+
+    by_time = {sample_time: filename for sample_time, filename in stitched}
+    return [by_time[sample_time] for sample_time in sorted(by_time)]
 
 
 def periodic_derivative(field, spacing, axis):
@@ -652,9 +690,8 @@ def main():
                 plot_saved_comparison(statistics_files, labels, args.output)
             print("Regenerated plots in %s" % args.output)
         return
-    files = sorted(glob.glob(args.input))
-    if not files:
-        raise RuntimeError("No files match %r" % args.input)
+    files = resolve_snapshot_inputs(args.input) if rank == 0 else None
+    files = comm.bcast(files, root=0)
 
     with np.load(files[0]) as first:
         x, y, z = first["x"], first["y"], first["z"]

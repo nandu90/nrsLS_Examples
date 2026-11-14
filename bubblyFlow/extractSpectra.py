@@ -8,6 +8,7 @@ the TKE spectrum is one half the sum of the three component spectra.
 import argparse
 import glob
 import os
+import re
 import time
 
 from mpi4py import MPI
@@ -20,7 +21,10 @@ import matplotlib.pyplot as plt
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", default="interpolatedData/*.npz")
+    parser.add_argument(
+        "--input", nargs="+", default=["interpolatedData/*.npz"],
+        help=("One or more chronological snapshot globs, files, or "
+              "directories. Later inputs replace overlapping restart times"))
     parser.add_argument("--output", default="spectraData")
     parser.add_argument("--plot-only", action="store_true",
                         help="regenerate plots from OUTPUT/spectra.npz")
@@ -35,6 +39,41 @@ def parse_arguments():
                         default=1.0e-5,
                         help="omit plotted values below this fraction of peak")
     return parser.parse_args()
+
+
+def natural_sort_key(path):
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path)]
+
+
+def snapshot_time(filename):
+    with np.load(filename) as data:
+        return float(data["time"])
+
+
+def resolve_snapshot_inputs(input_specifications):
+    """Expand and stitch chronological restart segments by snapshot time."""
+    stitched = []
+    for specification in input_specifications:
+        if os.path.isdir(specification):
+            matches = glob.glob(os.path.join(specification, "*.npz"))
+        else:
+            matches = glob.glob(specification)
+        matches = sorted((name for name in matches if os.path.isfile(name)),
+                         key=natural_sort_key)
+        if not matches:
+            raise RuntimeError("No files match %r" % specification)
+        segment = sorted(((snapshot_time(name), name) for name in matches),
+                         key=lambda item: (item[0], natural_sort_key(item[1])))
+        restart_time = segment[0][0]
+        tolerance = 1.0e-12*max(1.0, abs(restart_time))
+        stitched = [item for item in stitched
+                    if item[0] < restart_time - tolerance]
+        stitched.extend(segment)
+
+    # At identical times, retain the file from the later input segment.
+    by_time = {sample_time: filename for sample_time, filename in stitched}
+    return [by_time[sample_time] for sample_time in sorted(by_time)]
 
 
 def one_sided_power(field, axis):
@@ -359,9 +398,9 @@ def main():
             plot_saved_spectra(args)
         return
 
-    input_files = sorted(glob.glob(args.input))
-    if not input_files:
-        raise RuntimeError("No files match %r" % args.input)
+    input_files = (resolve_snapshot_inputs(args.input)
+                   if rank == 0 else None)
+    input_files = comm.bcast(input_files, root=0)
 
     with np.load(input_files[0]) as first:
         x = first["x"]
