@@ -60,6 +60,7 @@ mpiexec -n 8 python extractSpectra.py \
   --input 'run7/interpolatedData/*.npz' \
           'run8/interpolatedData/*.npz' \
           'run9/interpolatedData/*.npz' \
+  --t-min 50 \
   --output spectraData
 ```
 
@@ -67,6 +68,8 @@ A directory may be supplied instead of its `*.npz` glob. Later input segments
 replace snapshots from earlier segments at overlapping restart times, and an
 exact duplicate time is counted only once. Keep the separate input arguments
 rather than using one `run*/...` glob when restart intervals may overlap.
+Use `--t-min` and optionally `--t-max` to restrict the averaging interval by
+the simulation time stored inside each snapshot.
 
 The script performs one-dimensional FFTs only in the homogeneous periodic
 directions.  It writes:
@@ -131,6 +134,7 @@ mpiexec -n 8 python extractStatistics.py \
   --input 'run7/interpolatedData/*.npz' \
           'run8/interpolatedData/*.npz' \
           'run9/interpolatedData/*.npz' \
+  --t-min 50 \
   --output statisticsData \
   --re 5600 --re-tau 280
 ```

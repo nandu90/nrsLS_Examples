@@ -27,6 +27,10 @@ def arguments():
         help=("One or more chronological snapshot globs, files, or "
               "directories. Later inputs replace overlapping restart times"))
     parser.add_argument("--output", default="statisticsData")
+    parser.add_argument("--t-min", type=float, default=None,
+                        help="Ignore snapshots with time below this value")
+    parser.add_argument("--t-max", type=float, default=None,
+                        help="Ignore snapshots with time above this value")
     parser.add_argument(
         "--plot-only", action="store_true",
         help="Regenerate plots from an existing statistics.npz file")
@@ -53,7 +57,7 @@ def snapshot_time(filename):
         return float(data["time"])
 
 
-def resolve_snapshot_inputs(input_specifications):
+def resolve_snapshot_inputs(input_specifications, t_min=None, t_max=None):
     """Expand and stitch chronological restart segments by snapshot time."""
     stitched = []
     for specification in input_specifications:
@@ -74,7 +78,12 @@ def resolve_snapshot_inputs(input_specifications):
         stitched.extend(segment)
 
     by_time = {sample_time: filename for sample_time, filename in stitched}
-    return [by_time[sample_time] for sample_time in sorted(by_time)]
+    selected_times = [sample_time for sample_time in sorted(by_time)
+                      if (t_min is None or sample_time >= t_min) and
+                      (t_max is None or sample_time <= t_max)]
+    if not selected_times:
+        raise RuntimeError("No snapshots remain in the requested time window")
+    return [by_time[sample_time] for sample_time in selected_times]
 
 
 def periodic_derivative(field, spacing, axis):
@@ -690,7 +699,8 @@ def main():
                 plot_saved_comparison(statistics_files, labels, args.output)
             print("Regenerated plots in %s" % args.output)
         return
-    files = resolve_snapshot_inputs(args.input) if rank == 0 else None
+    files = (resolve_snapshot_inputs(args.input, args.t_min, args.t_max)
+             if rank == 0 else None)
     files = comm.bcast(files, root=0)
 
     with np.load(files[0]) as first:

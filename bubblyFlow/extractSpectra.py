@@ -26,6 +26,10 @@ def parse_arguments():
         help=("One or more chronological snapshot globs, files, or "
               "directories. Later inputs replace overlapping restart times"))
     parser.add_argument("--output", default="spectraData")
+    parser.add_argument("--t-min", type=float, default=None,
+                        help="Ignore snapshots with time below this value")
+    parser.add_argument("--t-max", type=float, default=None,
+                        help="Ignore snapshots with time above this value")
     parser.add_argument("--plot-only", action="store_true",
                         help="regenerate plots from OUTPUT/spectra.npz")
     parser.add_argument("--re-tau", type=float, default=280.0)
@@ -51,7 +55,7 @@ def snapshot_time(filename):
         return float(data["time"])
 
 
-def resolve_snapshot_inputs(input_specifications):
+def resolve_snapshot_inputs(input_specifications, t_min=None, t_max=None):
     """Expand and stitch chronological restart segments by snapshot time."""
     stitched = []
     for specification in input_specifications:
@@ -73,7 +77,12 @@ def resolve_snapshot_inputs(input_specifications):
 
     # At identical times, retain the file from the later input segment.
     by_time = {sample_time: filename for sample_time, filename in stitched}
-    return [by_time[sample_time] for sample_time in sorted(by_time)]
+    selected_times = [sample_time for sample_time in sorted(by_time)
+                      if (t_min is None or sample_time >= t_min) and
+                      (t_max is None or sample_time <= t_max)]
+    if not selected_times:
+        raise RuntimeError("No snapshots remain in the requested time window")
+    return [by_time[sample_time] for sample_time in selected_times]
 
 
 def one_sided_power(field, axis):
@@ -398,7 +407,7 @@ def main():
             plot_saved_spectra(args)
         return
 
-    input_files = (resolve_snapshot_inputs(args.input)
+    input_files = (resolve_snapshot_inputs(args.input, args.t_min, args.t_max)
                    if rank == 0 else None)
     input_files = comm.bcast(input_files, root=0)
 
