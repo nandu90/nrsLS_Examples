@@ -223,8 +223,16 @@ def plot_results(output, y, yplus, all_statistics, liquid, gas, budget=None,
     fig.savefig(os.path.join(output, "tkeProfiles.png"), dpi=200)
     plt.close(fig)
 
+    # Freshly accumulated phase statistics use the generic key ``mean``.
+    # Statistics reloaded from statistics.npz use the descriptive alias
+    # ``meanVelocity``.  Accept both representations so the direct and
+    # --plot-only paths share this plotting routine.
+    mean_velocity = all_statistics.get("meanVelocity")
+    if mean_velocity is None:
+        mean_velocity = all_statistics["mean"]
+
     fig, ax = plt.subplots(figsize=(6, 5))
-    ax.plot(all_statistics["meanVelocity"][:, 0], y,
+    ax.plot(mean_velocity[:, 0], y,
             label=r"$\langle u\rangle$")
     ax.set_xlabel(r"$\langle u\rangle$")
     ax.set_ylabel(r"$y/\delta$")
