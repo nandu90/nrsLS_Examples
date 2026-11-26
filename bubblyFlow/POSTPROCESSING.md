@@ -87,7 +87,7 @@ directions.  It writes:
 plane variance. Premultiplied plots convert modal energy to spectral density
 using `E=P/delta_k`; this matters because the streamwise and spanwise domains
 have different fundamental wavenumber spacings. Their horizontal axes are the
-outer-scaled wavenumbers `kx*delta` and `kz*delta`, where `delta` is the channel
+outer-scaled wavenumbers `kappa_x*delta` and `kappa_z*delta`, where `delta` is the channel
 half-gap; both spectral axes are logarithmic. The instantaneous x-z plane
 mean is subtracted before each transform, removing the joint horizontal mean.
 Only plotted values below `--relative-spectrum-floor` times the peak are
@@ -104,6 +104,31 @@ python ../extractSpectra.py --plot-only \
   --target-yplus 12 280 \
   --relative-spectrum-floor 1e-5
 ```
+
+Compare saved spectra from several meshes without rereading interpolated
+snapshots:
+
+```bash
+python extractSpectra.py --plot-only \
+  --spectra hbase/p7/spectraData \
+            hbase/p9/spectraData \
+            hrefine/p7/spectraData \
+  --labels 'E,N7' 'E,N9' '2E,N7' \
+  --output spectraComparison \
+  --target-yplus 12 280 \
+  --relative-spectrum-floor 1e-5
+```
+
+The comparison figures use color for velocity component or phase and
+linestyle for mesh. Total-TKE and temperature spectra use a distinct color
+for each mesh. Temperature and phase comparisons are written when every input
+contains the corresponding saved fields. No MPI launcher is needed in
+`--plot-only` mode.
+
+Inputs identified as single phase by a `singlePhase`, `single_phase`, or
+`single-phase` path component, or by the label `1P`/`single phase`, remain in
+the component, TKE, and temperature comparisons but are omitted from the
+phase-specific comparison.
 
 The phase spectra use CLS for the liquid fraction and `1-CLS` for the gas
 fraction. They are obtained by differentiating Gaussian-filtered phase kinetic
@@ -239,10 +264,34 @@ them together:
 ```bash
 python plotBudgetProfiles.py \
   --input hbase/p7 hbase/p9 hrefine/p7 \
-  --labels 'N=7' 'N=9' 'h/2, N=7' \
-  --t-min 20 \
+  --labels 'E,N7' 'E,N9' '2E,N7' \
+  --t-min 50 \
   --output budgetProfilePlots
 ```
+
+An `extractStatistics.py` result from a single-phase run can be overlaid on
+only the mean streamwise-velocity and mean-temperature figures:
+
+```bash
+python plotBudgetProfiles.py \
+  --input hbase/p7 hbase/p9 hrefine/p7 \
+  --labels 'E,N7' 'E,N9' '2E,N7' \
+  --t-min 50 \
+  --re-tau 279.1 282.3 288.7 \
+  --single-phase-statistics singlePhase/p9/statisticsData \
+  --single-phase-label 'single phase' \
+  --output budgetProfilePlots
+```
+
+The statistics option accepts either `statistics.npz` itself or the directory
+that contains it. It does not add the single-phase data to the density,
+phase-indicator, flux, or budget plots.
+
+The script also writes `phaseIndicatorYplus`, `meanVelocityYplus`, and
+`meanTemperatureYplus`. These figures average the two channel halves and use
+`y+ = Re_tau*(1-|y/delta|)`. Supply one `--re-tau` value per bubbly case, or
+one common value for every case. The single-phase curve uses the `yplus`
+array stored in `statistics.npz`.
 
 Newly generated files also contain mean and RMS temperature, conductivity,
 volumetric heat capacity, velocity--temperature covariance, and convective

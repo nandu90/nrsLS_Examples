@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 
 def parse_arguments():
@@ -32,6 +33,13 @@ def parse_arguments():
                         help="Ignore snapshots with time above this value")
     parser.add_argument("--plot-only", action="store_true",
                         help="regenerate plots from OUTPUT/spectra.npz")
+    parser.add_argument(
+        "--spectra", nargs="+", default=None,
+        help=("In --plot-only mode, spectra.npz files or directories "
+              "containing spectra.npz. Multiple inputs are compared on "
+              "the same figures"))
+    parser.add_argument("--labels", nargs="+", default=None,
+                        help="one comparison label per --spectra input")
     parser.add_argument("--re-tau", type=float, default=280.0)
     parser.add_argument("--target-yplus", type=float, nargs="*",
                         default=[12.0, 280.0])
@@ -233,8 +241,8 @@ def plot_phase_spectra(output_dir, target_yplus, actual_yplus,
                     axis.loglog(
                         wave[valid], premultiplied[valid],
                         color=color, linestyle=style, label=label)
-            axis.set_xlabel(r"$k_%s\delta$" % direction)
-            axis.set_ylabel(r"$k_%s E_{m}/k_m$" % direction)
+            axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+            axis.set_ylabel(r"$\kappa_%s E_{m}/k_m$" % direction)
             axis.grid(True, which="both", alpha=0.35)
         axes[0].legend()
         fig.suptitle(r"filtered phase spectra, $y^+=%.2f$" %
@@ -279,8 +287,9 @@ def plot_selected_planes(output_dir, y, yplus, kx, kz, ex, ez,
                     color=colors[component],
                     label=component_names[component])
 
-            axis.set_xlabel(r"$k_%s\delta$" % direction)
-            axis.set_ylabel(r"$k_%s E_{ii}/\langle u_i'^2\rangle$" % direction)
+            axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+            axis.set_ylabel(
+                r"$\kappa_%s E_{ii}/\langle u_i'^2\rangle$" % direction)
             axis.grid(True, which="both", alpha=0.35)
 
         axes[0].legend()
@@ -314,9 +323,10 @@ def plot_selected_temperature_planes(output_dir, y, yplus, kx, kz, ex, ez,
                 wave[positive], premultiplied, relative_floor)
             axis.loglog(wave[positive][valid], premultiplied[valid],
                         color="#CC0000")
-            axis.set_xlabel(r"$k_%s\delta$" % direction)
-            axis.set_ylabel(r"$k_%s E_{TT}/\langle T'^2\rangle$" %
-                            direction)
+            axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+            axis.set_ylabel(
+                r"$\kappa_%s E_{\Theta\Theta}/\langle\Theta'^2\rangle$" %
+                direction)
             axis.grid(True, which="both", alpha=0.35)
         fig.suptitle(r"temperature, $y^+=%.2f$" % actual)
         fig.tight_layout()
@@ -348,7 +358,7 @@ def plot_tke_spectra(output_dir, y, yplus, kx, kz, ex, ez, targets,
                         color="#0072B2", marker="o", markersize=3,
                         markevery=max(1, np.count_nonzero(valid)//25),
                         label="TKE spectrum")
-            axis.set_xlabel(r"$k_%s\delta$" % direction)
+            axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
             axis.set_ylabel(r"$E_{k,%s}$" % direction)
             axis.grid(True, which="both", alpha=0.35)
         axes[0].legend()
@@ -396,6 +406,242 @@ def plot_saved_spectra(args):
     print("Regenerated plots from %s" % filename)
 
 
+def spectra_filename(path):
+    """Resolve a spectra directory or an explicit spectra.npz file."""
+    filename = os.path.join(path, "spectra.npz") if os.path.isdir(path) else path
+    if not os.path.isfile(filename):
+        raise FileNotFoundError("Saved spectra not found: %s" % filename)
+    return filename
+
+
+def is_single_phase_comparison_input(path, label):
+    """Identify explicitly named single-phase inputs for phase plots only."""
+    normalized_path = os.path.normpath(path).lower()
+    path_tokens = re.split(r"[/\\_-]+", normalized_path)
+    normalized_label = re.sub(r"[\s_-]+", "", label.lower())
+    return ("singlephase" in normalized_path.replace("_", "").replace("-", "")
+            or ("single" in path_tokens and "phase" in path_tokens)
+            or normalized_label in ("1p", "singlephase"))
+
+
+def plot_saved_comparison(args):
+    """Compare multiple saved spectra datasets without rereading snapshots."""
+    filenames = [spectra_filename(path) for path in args.spectra]
+    labels = args.labels
+    if labels is None:
+        labels = [os.path.basename(os.path.dirname(filename))
+                  for filename in filenames]
+    if len(labels) != len(filenames):
+        raise ValueError("--labels must contain one label per --spectra input")
+    if len(filenames) < 2:
+        raise ValueError("Multiple --spectra inputs are required for comparison")
+    if not 0.0 <= args.relative_spectrum_floor < 1.0:
+        raise ValueError("relative-spectrum-floor must be in [0, 1)")
+
+    os.makedirs(args.output, exist_ok=True)
+    datasets = [np.load(filename) for filename in filenames]
+    phase_case_indices = [
+        index for index, (path, label) in enumerate(zip(args.spectra, labels))
+        if not is_single_phase_comparison_input(path, label)
+    ]
+    case_colors = ("#0072B2", "#D55E00", "#009E73", "#CC0000",
+                   "#990099", "#56B4E9")
+    case_styles = ("-", "--", ":", "-.")
+    component_names = (r"$u'$", r"$v'$", r"$w'$")
+    component_colors = ("#0072B2", "#D55E00", "#009E73")
+
+    component_handles = [
+        Line2D([0], [0], color=color, linewidth=2.0, label=label)
+        for color, label in zip(component_colors, component_names)]
+    case_style_handles = [
+        Line2D([0], [0], color="black",
+               linestyle=case_styles[index % len(case_styles)],
+               linewidth=2.0, label=label)
+        for index, label in enumerate(labels)]
+
+    for target in args.target_yplus:
+        tag = ("%.2f" % target).replace(".", "p")
+        actual_yplus = []
+
+        # Premultiplied component spectra: color denotes component and
+        # linestyle denotes the mesh/case.
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        for case_index, data in enumerate(datasets):
+            indices = matching_half_indices(data["y"], data["yplus"], target)
+            actual_yplus.append(float(np.mean(data["yplus"][indices])))
+            variance = np.mean(data["variance"][indices], axis=0)
+            for axis, spectrum_key, wave_key, direction in (
+                    (axes[0], "Ex", "kx", "x"),
+                    (axes[1], "Ez", "kz", "z")):
+                wave = data[wave_key]
+                positive = wave > 0.0
+                delta_wave = wavenumber_spacing(wave)
+                spectrum = np.mean(data[spectrum_key][indices], axis=0)
+                for component in range(3):
+                    premultiplied = (
+                        wave[positive]*spectrum[positive, component] /
+                        (delta_wave*max(variance[component], 1.0e-30)))
+                    valid = resolved_spectrum_mask(
+                        wave[positive], premultiplied,
+                        args.relative_spectrum_floor)
+                    axis.loglog(
+                        wave[positive][valid], premultiplied[valid],
+                        color=component_colors[component],
+                        linestyle=case_styles[case_index % len(case_styles)],
+                        linewidth=1.8)
+                axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+                axis.set_ylabel(
+                    r"$\kappa_%s E_{ii}/\langle u_i'^2\rangle$" %
+                    direction)
+                axis.grid(True, which="both", alpha=0.35)
+        first_legend = axes[0].legend(handles=component_handles,
+                                      loc="upper left")
+        axes[0].add_artist(first_legend)
+        axes[0].legend(handles=case_style_handles, loc="upper right")
+        fig.suptitle(r"$y^+\approx %.2f$" % np.mean(actual_yplus))
+        fig.tight_layout()
+        fig.savefig(os.path.join(
+            args.output, "premultipliedComparison_yplus_%s.png" % tag),
+            dpi=200)
+        plt.close(fig)
+
+        # Total TKE spectra: one color (and linestyle) per mesh/case.
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        for case_index, (data, label) in enumerate(zip(datasets, labels)):
+            indices = matching_half_indices(data["y"], data["yplus"], target)
+            for axis, spectrum_key, wave_key, direction in (
+                    (axes[0], "Ex", "kx", "x"),
+                    (axes[1], "Ez", "kz", "z")):
+                wave = data[wave_key]
+                spectrum = np.mean(data[spectrum_key][indices], axis=0)
+                density = (0.5*np.sum(spectrum, axis=1) /
+                           wavenumber_spacing(wave))
+                valid = resolved_spectrum_mask(
+                    wave, density, args.relative_spectrum_floor)
+                axis.loglog(
+                    wave[valid], density[valid],
+                    color=case_colors[case_index % len(case_colors)],
+                    linestyle=case_styles[case_index % len(case_styles)],
+                    linewidth=1.8, label=label)
+                axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+                axis.set_ylabel(r"$E_{k,%s}$" % direction)
+                axis.grid(True, which="both", alpha=0.35)
+        axes[0].legend()
+        fig.suptitle(r"TKE spectra, $y^+\approx %.2f$" %
+                     np.mean(actual_yplus))
+        fig.tight_layout()
+        fig.savefig(os.path.join(
+            args.output, "tkeComparison_yplus_%s.png" % tag), dpi=200)
+        plt.close(fig)
+
+        temperature_keys = {"ExTemperature", "EzTemperature",
+                            "temperatureVariance"}
+        if all(temperature_keys.issubset(data.files) for data in datasets):
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+            for case_index, (data, label) in enumerate(zip(datasets, labels)):
+                indices = matching_half_indices(
+                    data["y"], data["yplus"], target)
+                variance = float(np.mean(data["temperatureVariance"][indices]))
+                for axis, spectrum_key, wave_key, direction in (
+                        (axes[0], "ExTemperature", "kx", "x"),
+                        (axes[1], "EzTemperature", "kz", "z")):
+                    wave = data[wave_key]
+                    positive = wave > 0.0
+                    spectrum = np.mean(data[spectrum_key][indices], axis=0)
+                    premultiplied = (
+                        wave[positive]*spectrum[positive] /
+                        (wavenumber_spacing(wave)*max(variance, 1.0e-30)))
+                    valid = resolved_spectrum_mask(
+                        wave[positive], premultiplied,
+                        args.relative_spectrum_floor)
+                    axis.loglog(
+                        wave[positive][valid], premultiplied[valid],
+                        color=case_colors[case_index % len(case_colors)],
+                        linestyle=case_styles[case_index % len(case_styles)],
+                        linewidth=1.8, label=label)
+                    axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+                    axis.set_ylabel(
+                        r"$\kappa_%s E_{\Theta\Theta}/"
+                        r"\langle\Theta'^2\rangle$" %
+                        direction)
+                    axis.grid(True, which="both", alpha=0.35)
+            axes[0].legend()
+            fig.suptitle(r"temperature spectra, $y^+\approx %.2f$" %
+                         np.mean(actual_yplus))
+            fig.tight_layout()
+            fig.savefig(os.path.join(
+                args.output, "temperatureComparison_yplus_%s.png" % tag),
+                dpi=200)
+            plt.close(fig)
+
+        phase_keys = {"phaseTargetYplus", "phaseActualYplus",
+                      "kxPhaseFilter", "kzPhaseFilter",
+                      "ExLiquidFiltered", "ExGasFiltered",
+                      "EzLiquidFiltered", "EzGasFiltered",
+                      "liquidPhaseTke", "gasPhaseTke"}
+        if (phase_case_indices and
+                all(phase_keys.issubset(datasets[index].files)
+                    for index in phase_case_indices)):
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+            phase_colors = ("#0072B2", "#D55E00")
+            phase_actual_yplus = []
+            for phase_style_index, case_index in enumerate(phase_case_indices):
+                data = datasets[case_index]
+                target_index = int(np.argmin(
+                    np.abs(data["phaseTargetYplus"] - target)))
+                phase_actual_yplus.append(
+                    float(data["phaseActualYplus"][target_index]))
+                for axis, wave_key, liquid_key, gas_key, direction in (
+                        (axes[0], "kxPhaseFilter", "ExLiquidFiltered",
+                         "ExGasFiltered", "x"),
+                        (axes[1], "kzPhaseFilter", "EzLiquidFiltered",
+                         "EzGasFiltered", "z")):
+                    wave = data[wave_key]
+                    for phase_index, (spectrum_key, normalizer_key) in enumerate(
+                            ((liquid_key, "liquidPhaseTke"),
+                             (gas_key, "gasPhaseTke"))):
+                        normalizer = float(data[normalizer_key][target_index])
+                        if normalizer <= 1.0e-30:
+                            continue
+                        premultiplied = (
+                            wave*data[spectrum_key][target_index]/normalizer)
+                        valid = resolved_spectrum_mask(
+                            wave, premultiplied,
+                            args.relative_spectrum_floor)
+                        axis.loglog(
+                            wave[valid], premultiplied[valid],
+                            color=phase_colors[phase_index],
+                            linestyle=case_styles[
+                                phase_style_index % len(case_styles)],
+                            linewidth=1.8)
+                    axis.set_xlabel(r"$\kappa_%s\delta$" % direction)
+                    axis.set_ylabel(r"$\kappa_%s E_m/k_m$" % direction)
+                    axis.grid(True, which="both", alpha=0.35)
+            phase_handles = [
+                Line2D([0], [0], color=color, linewidth=2.0, label=label)
+                for color, label in zip(phase_colors, ("liquid", "gas"))]
+            first_legend = axes[0].legend(handles=phase_handles,
+                                          loc="upper left")
+            axes[0].add_artist(first_legend)
+            phase_case_handles = [
+                Line2D([0], [0], color="black",
+                       linestyle=case_styles[index % len(case_styles)],
+                       linewidth=2.0, label=labels[case_index])
+                for index, case_index in enumerate(phase_case_indices)
+            ]
+            axes[0].legend(handles=phase_case_handles, loc="upper right")
+            fig.suptitle(r"filtered phase spectra, $y^+\approx %.2f$" %
+                         np.mean(phase_actual_yplus))
+            fig.tight_layout()
+            fig.savefig(os.path.join(
+                args.output, "phaseComparison_yplus_%s.png" % tag), dpi=200)
+            plt.close(fig)
+
+    for data in datasets:
+        data.close()
+    print("Wrote comparison plots to %s" % args.output)
+
+
 def main():
     args = parse_arguments()
     comm = MPI.COMM_WORLD
@@ -404,7 +650,12 @@ def main():
 
     if args.plot_only:
         if rank == 0:
-            plot_saved_spectra(args)
+            if args.spectra is not None:
+                plot_saved_comparison(args)
+            else:
+                if args.labels is not None:
+                    raise ValueError("--labels requires --spectra")
+                plot_saved_spectra(args)
         return
 
     input_files = (resolve_snapshot_inputs(args.input, args.t_min, args.t_max)

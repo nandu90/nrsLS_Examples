@@ -80,6 +80,17 @@ def arguments():
                         help="Use intervals ending at or before this time")
     parser.add_argument("--last", action="store_true",
                         help="Plot only the last selected interval")
+    parser.add_argument(
+        "--single-phase-statistics", default=None,
+        help=("Optional statistics.npz file, or its containing directory, "
+              "whose single-phase mean velocity and temperature profiles "
+              "are overlaid on the corresponding figures"))
+    parser.add_argument("--single-phase-label", default="single phase",
+                        help="Legend label for --single-phase-statistics")
+    parser.add_argument(
+        "--re-tau", nargs="+", type=float, default=None,
+        help=("Friction Reynolds number for each budget-profile case. "
+              "A single value is applied to every case; default: 280"))
     return parser.parse_args()
 
 
@@ -250,29 +261,70 @@ def average_profiles(names, blocks):
     return profile, total_duration, durations
 
 
-def plot_profiles(output_dir, profiles, case_labels):
+def load_single_phase_profile(path):
+    """Load mean velocity and temperature from extractStatistics output."""
+    if os.path.isdir(path):
+        path = os.path.join(path, "statistics.npz")
+    with np.load(path) as statistics:
+        required = ("y", "yplus", "meanVelocity", "meanTemperature")
+        missing = [name for name in required if name not in statistics.files]
+        if missing:
+            raise RuntimeError(
+                "%s is missing required field(s): %s" %
+                (path, ", ".join(missing)))
+        mean_velocity = statistics["meanVelocity"]
+        if mean_velocity.ndim != 2 or mean_velocity.shape[1] < 1:
+            raise ValueError("meanVelocity in %s has unexpected shape %s" %
+                             (path, mean_velocity.shape))
+        profile = {
+            "y": statistics["y"].copy(),
+            "yplus": statistics["yplus"].copy(),
+            "u": mean_velocity[:, 0].copy(),
+            "T": statistics["meanTemperature"].copy(),
+        }
+    if not (profile["y"].shape == profile["yplus"].shape ==
+            profile["u"].shape == profile["T"].shape):
+        raise ValueError("Single-phase profile arrays in %s do not align" %
+                         path)
+    return profile, path
+
+
+def plot_profiles(output_dir, profiles, case_labels,
+                  single_phase_profile=None,
+                  single_phase_label="single phase", case_re_tau=None):
     os.makedirs(output_dir, exist_ok=True)
+    if case_re_tau is None:
+        case_re_tau = [280.0]*len(profiles)
     case_styles = ["-", ":", "--", "-."]
     palette = ["#0072B2", "#D55E00", "#009E73", "#CC0000",
                "#990099", "#56B4E9"]
 
-    def comparison(name, ylabel, fields, field_labels, transforms=None):
+    def comparison(name, ylabel, fields, field_labels, transforms=None,
+                   include_single_phase=False):
         x_values, y_values, labels = [], [], []
         linestyles, colors = [], []
         if transforms is None:
             transforms = [lambda profile, field=field: profile[field]
                           for field in fields]
+        plotted_profiles = list(profiles)
+        plotted_labels = list(case_labels)
+        if include_single_phase and single_phase_profile is not None:
+            plotted_profiles.append(single_phase_profile)
+            plotted_labels.append(single_phase_label)
         for field_index, (field_label, transform) in enumerate(
                 zip(field_labels, transforms)):
             for case_index, (profile, case_label) in enumerate(
-                    zip(profiles, case_labels)):
+                    zip(plotted_profiles, plotted_labels)):
                 x_values.append(profile["y"])
                 y_values.append(transform(profile))
                 labels.append(case_label if len(fields) == 1 else
                               "%s, %s" % (field_label, case_label))
                 linestyles.append(
                     case_styles[case_index % len(case_styles)])
-                colors.append(palette[field_index % len(palette)])
+                if len(fields) == 1:
+                    colors.append(palette[case_index % len(palette)])
+                else:
+                    colors.append(palette[field_index % len(palette)])
         plotnow(
             os.path.join(output_dir, name), r"$y/\delta$", ylabel,
             x_values, y_values, labels,
@@ -280,22 +332,99 @@ def plot_profiles(output_dir, profiles, case_labels):
             colors=colors,
         )
 
+    def folded_wall_curve(profile, field, re_tau=None):
+        """Fold an even profile about the centerline and return y+ > 0."""
+        y = np.asarray(profile["y"])
+        values = np.asarray(profile[field])
+        order = np.argsort(y)
+        y = y[order]
+        values = values[order]
+        upper = y >= -1.0e-12
+        upper_y = y[upper]
+        upper_values = values[upper]
+        lower_values = np.interp(-upper_y, y, values)
+        folded_values = 0.5*(upper_values + lower_values)
+
+        if "yplus" in profile:
+            stored_yplus = np.asarray(profile["yplus"])[order]
+            wall_coordinate = stored_yplus[upper]
+        else:
+            wall_coordinate = re_tau*(1.0 - np.abs(upper_y))
+
+        valid = ((wall_coordinate > 0.0) &
+                 np.isfinite(wall_coordinate) &
+                 np.isfinite(folded_values))
+        wall_coordinate = wall_coordinate[valid]
+        folded_values = folded_values[valid]
+        wall_order = np.argsort(wall_coordinate)
+        return wall_coordinate[wall_order], folded_values[wall_order]
+
+    def wall_comparison(name, ylabel, field, include_single_phase=True,
+                        transform=None, ptype="semilogx"):
+        wall_profiles = list(profiles)
+        wall_labels = list(case_labels)
+        wall_re_tau = list(case_re_tau)
+        if include_single_phase and single_phase_profile is not None:
+            wall_profiles.append(single_phase_profile)
+            wall_labels.append(single_phase_label)
+            wall_re_tau.append(None)
+
+        x_values, y_values = [], []
+        for profile, re_tau in zip(wall_profiles, wall_re_tau):
+            wall_coordinate, folded_values = folded_wall_curve(
+                profile, field, re_tau)
+            if transform is not None:
+                folded_values = transform(folded_values)
+            x_values.append(wall_coordinate)
+            y_values.append(folded_values)
+        plotnow(
+            os.path.join(output_dir, name), r"$y^+$", ylabel,
+            x_values, y_values, wall_labels, ptype=ptype,
+            linestyles=[case_styles[index % len(case_styles)]
+                        for index in range(len(wall_profiles))],
+            markers=[""]*len(wall_profiles),
+            colors=[palette[index % len(palette)]
+                    for index in range(len(wall_profiles))],
+        )
+
     # Requested single-quantity mesh comparisons.
     comparison("density", r"$\langle\rho\rangle_{xz,t}$",
                ("rho",), (r"$\langle\rho\rangle$",))
-    comparison("phaseIndicator", r"$\langle CLS\rangle_{xz,t}$",
-               ("cls",), (r"$\langle CLS\rangle$",))
+    comparison("phaseIndicator", r"$\langle\psi\rangle_{xz,t}$",
+               ("cls",), (r"$\langle\psi\rangle$",))
+    wall_comparison("phaseIndicatorYplus", r"$\langle\psi\rangle_{xz,t}$",
+                    "cls", include_single_phase=False)
+    # CLS equals one in the continuous liquid and zero in the dispersed gas,
+    # so its complement is the local gas volume (void) fraction.  Retain the
+    # raw phase-indicator plots above and additionally provide the quantity
+    # conventionally reported by bubbly-channel studies.
+    comparison(
+        "voidFraction", r"$\langle\alpha_g\rangle_{xz,t}$",
+        ("cls",), (r"$\langle\alpha_g\rangle$",),
+        transforms=(lambda profile: 1.0 - profile["cls"],))
+    wall_comparison(
+        "voidFractionYplus", r"$\langle\alpha_g\rangle_{xz,t}$",
+        "cls", include_single_phase=False,
+        transform=lambda phase_indicator: 1.0 - phase_indicator,
+        ptype="line")
     comparison("meanVelocity", r"$\langle u\rangle_{xz,t}$",
-               ("u",), (r"$\langle u\rangle$",))
+               ("u",), (r"$\langle u\rangle$",),
+               include_single_phase=True)
+    wall_comparison("meanVelocityYplus", r"$\langle u\rangle_{xz,t}$",
+                    "u")
     comparison("densityFlux", r"$\langle\rho u\rangle_{xz,t}$",
                ("rhoU",), (r"$\langle\rho u\rangle$",))
 
     if all("T" in profile for profile in profiles):
-        comparison("meanTemperature", r"$\langle T\rangle_{xz,t}$",
-                   ("T",), (r"$\langle T\rangle$",))
+        comparison("meanTemperature", r"$\langle \Theta\rangle_{xz,t}$",
+                   ("T",), (r"$\langle \Theta\rangle$",),
+                   include_single_phase=True)
+        wall_comparison(
+            "meanTemperatureYplus", r"$\langle \Theta\rangle_{xz,t}$",
+            "T")
         comparison(
-            "temperatureRms", r"$T_{rms}$", ("temperatureRms",),
-            (r"$T_{rms}$",),
+            "temperatureRms", r"$\Theta_{rms}$", ("temperatureRms",),
+            (r"$\Theta_{rms}$",),
             transforms=(lambda p: np.sqrt(
                 np.maximum(p["T2"] - p["T"]*p["T"], 0.0)),))
         comparison("conductivity", r"$\langle k\rangle_{xz,t}$",
@@ -304,19 +433,20 @@ def plot_profiles(output_dir, profiles, case_labels):
                    r"$\langle\rho c_p\rangle_{xz,t}$",
                    ("rhoCp",), (r"$\langle\rho c_p\rangle$",))
         comparison(
-            "turbulentHeatFlux", "velocity--temperature covariance",
+            "turbulentHeatFlux", r"velocity--$\Theta$ covariance",
             ("uPrimeTPrime", "vPrimeTPrime", "wPrimeTPrime"),
-            (r"$\langle u'T'\rangle$", r"$\langle v'T'\rangle$",
-             r"$\langle w'T'\rangle$"),
+            (r"$\langle u'\Theta'\rangle$",
+             r"$\langle v'\Theta'\rangle$",
+             r"$\langle w'\Theta'\rangle$"),
             transforms=(lambda p: p["uT"] - p["u"]*p["T"],
                         lambda p: p["vT"] - p["v"]*p["T"],
                         lambda p: p["wT"] - p["w"]*p["T"]))
         comparison(
             "convectiveEnthalpyFlux", "convective enthalpy flux",
             ("rhoCpUT", "rhoCpVT", "rhoCpWT"),
-            (r"$\langle\rho c_p uT\rangle$",
-             r"$\langle\rho c_p vT\rangle$",
-             r"$\langle\rho c_p wT\rangle$"))
+            (r"$\langle\rho c_p u\Theta\rangle$",
+             r"$\langle\rho c_p v\Theta\rangle$",
+             r"$\langle\rho c_p w\Theta\rangle$"))
 
     comparison(
         "mechanicalPower", "planar-mean power density",
@@ -343,6 +473,14 @@ def main():
     args = arguments()
     if len(args.input) != len(args.labels):
         raise ValueError("--input and --labels must have the same length")
+    if args.re_tau is None:
+        case_re_tau = [280.0]*len(args.input)
+    elif len(args.re_tau) == 1:
+        case_re_tau = args.re_tau*len(args.input)
+    elif len(args.re_tau) == len(args.input):
+        case_re_tau = args.re_tau
+    else:
+        raise ValueError("--re-tau requires one value or one per input case")
 
     profiles = []
     metadata = []
@@ -357,7 +495,18 @@ def main():
         metadata.append((input_specification, label, len(blocks),
                          len(selected), duration, field_durations))
 
-    plot_profiles(args.output, profiles, args.labels)
+    single_phase_profile = None
+    single_phase_path = None
+    if args.single_phase_statistics is not None:
+        single_phase_profile, single_phase_path = load_single_phase_profile(
+            args.single_phase_statistics)
+
+    plot_profiles(args.output, profiles, args.labels,
+                  single_phase_profile, args.single_phase_label,
+                  case_re_tau)
+    if single_phase_path is not None:
+        print("Overlaid single-phase mean profiles from %s (%s)" %
+              (single_phase_path, args.single_phase_label))
     for case_index, (profile, details) in enumerate(
             zip(profiles, metadata)):
         (input_specification, label, block_count, selected_count, duration,

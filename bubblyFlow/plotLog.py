@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 
 FLOAT = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
@@ -201,11 +202,13 @@ def plot_fields(filename, ylabel, datasets, case_labels, stream, fields,
             values = np.asarray([record[field] for record in selected])
             if len(fields) == 1:
                 label = case_label
+                color = palette[case_index % len(palette)]
             else:
                 label = "%s, %s" % (field_label, case_label)
+                color = palette[field_index % len(palette)]
             plotter = ax.semilogy if ptype == "semilogy" else ax.plot
             plotter(sample_times, values, label=label, linewidth=2.0,
-                    color=palette[field_index % len(palette)],
+                    color=color,
                     linestyle=case_linestyles[
                         case_index % len(case_linestyles)])
             curves += 1
@@ -218,7 +221,24 @@ def plot_fields(filename, ylabel, datasets, case_labels, stream, fields,
     ax.set_ylabel(ylabel, fontsize=15)
     ax.tick_params(axis="both", labelsize=12)
     ax.grid()
-    ax.legend(loc="best", fontsize=10)
+    if len(fields) > 1:
+        quantity_handles = [
+            Line2D([0], [0], color=palette[index % len(palette)],
+                   linestyle="-", linewidth=2.0, label=label)
+            for index, label in enumerate(field_labels)
+        ]
+        case_handles = [
+            Line2D([0], [0], color="black",
+                   linestyle=case_linestyles[index % len(case_linestyles)],
+                   linewidth=2.0, label=label)
+            for index, label in enumerate(case_labels)
+        ]
+        quantity_legend = ax.legend(handles=quantity_handles,
+                                    loc="upper left", fontsize=10)
+        ax.add_artist(quantity_legend)
+        ax.legend(handles=case_handles, loc="upper right", fontsize=10)
+    else:
+        ax.legend(loc="best", fontsize=10)
     fig.savefig(filename + ".pdf", bbox_inches="tight", dpi=100)
     fig.savefig(filename + ".png", bbox_inches="tight", dpi=100)
     plt.close(fig)
@@ -241,18 +261,17 @@ def make_plots(output_dir, datasets, case_labels):
         ("yPlus", r"$y^+$", "channel",
          ("yPlusMin", "yPlusAvg", "yPlusMax"),
          (r"$y^+_{min}$", r"$y^+_{avg}$", r"$y^+_{max}$"), "line"),
-        ("temperatureMeanRms", "temperature", "thermal",
+        ("temperatureMeanRms", r"temperature $\Theta$", "thermal",
          ("Tmean", "Trms"),
-         (r"$\langle T\rangle$", r"$T_{rms}$"), "line"),
-        ("bulkWallTemperature", "temperature", "thermal",
-         ("Tb", "Tw"), (r"$T_b$", r"$T_w$"), "line"),
-        ("wallBulkDifference", r"$T_w-T_b$", "thermal",
+         (r"$\langle \Theta\rangle$", r"$\Theta_{rms}$"), "line"),
+        ("wallTemperature", r"mean wall temperature $\overline{\Theta}_w$",
+         "thermal", ("Tw",), (r"$\overline{\Theta}_w$",), "line"),
+        ("wallBulkDifference", r"$\overline{\Theta}_w-\Theta_b$", "thermal",
          ("Tw-Tb",), None, "line"),
         ("stanton", "Stanton number", "thermal",
          ("St",), None, "line"),
         ("nusselt", "Nusselt number", "thermal",
-         ("Nu_delta", "Nu_H"),
-         (r"$Nu_\delta$", r"$Nu_H$"), "line"),
+         ("Nu_delta",), (r"$Nu_\delta$",), "line"),
         ("timeStep", r"time step $\Delta t$", "runtime",
          ("dt",), None, "line"),
         ("cfl", "CFL", "runtime", ("CFL",), None, "line"),

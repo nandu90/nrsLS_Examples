@@ -172,9 +172,10 @@ def main():
                     ax.loglog(wave[positive][valid], premultiplied[valid],
                               color=component_colors[component],
                               linestyle=styles[case % len(styles)])
-                ax.set_xlabel(r"$k_%s\delta$" % direction)
+                ax.set_xlabel(r"$\kappa_%s\delta$" % direction)
                 ax.set_ylabel(
-                    r"$k_%s E_{ii}/\langle u_i'^2\rangle$" % direction)
+                    r"$\kappa_%s E_{ii}/\langle u_i'^2\rangle$" %
+                    direction)
                 ax.grid(True, which="both", alpha=0.35)
         component_handles = [
             Line2D([0], [0], color=color, linestyle="-", label=name)
@@ -209,7 +210,7 @@ def main():
                 ax.loglog(wave[positive][valid], density[positive][valid],
                           color="#0072B2",
                           linestyle=styles[case % len(styles)], label=label)
-                ax.set_xlabel(r"$k_%s\delta$" % direction)
+                ax.set_xlabel(r"$\kappa_%s\delta$" % direction)
                 ax.set_ylabel(r"$E_{k,%s}$" % direction)
                 ax.grid(True, which="both", alpha=0.35)
         axes[0].legend()

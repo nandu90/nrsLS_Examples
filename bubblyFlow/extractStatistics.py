@@ -455,11 +455,9 @@ def plot_saved_comparison(filenames, labels, output):
         iii = liquid["III"][upper][order]
         minus_ii = -liquid["II"][upper][order]
         valid = np.isfinite(iii) & np.isfinite(minus_ii)
-        ax.scatter(iii[valid], minus_ii[valid],
-                   c=yplus[upper][order][valid], cmap=yplus_cmap,
-                   norm=yplus_norm, marker=markers[index % len(markers)],
-                   s=27, linewidths=0.55, edgecolors="black", label=label,
-                   zorder=3)
+        ax.plot(iii[valid], minus_ii[valid],
+                color=colors[index % len(colors)], linewidth=2.0,
+                label=label, zorder=3)
     ax.text(-0.0065, 0.012, "isotropic", fontsize=9)
     ax.text(2.0/27.0, 1.0/3.0, "1C", ha="left", va="bottom",
             fontsize=9)
@@ -471,8 +469,6 @@ def plot_saved_comparison(filenames, labels, output):
     ax.set_ylim(-0.005, 0.35)
     ax.grid(True, alpha=0.3)
     ax.legend()
-    fig.colorbar(mpl.cm.ScalarMappable(norm=yplus_norm, cmap=yplus_cmap),
-                 ax=ax, label=r"$y^+$")
     fig.tight_layout()
     fig.savefig(os.path.join(output, "invariantTriangleComparison.png"),
                 dpi=200)

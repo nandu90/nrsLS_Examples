@@ -11,6 +11,7 @@ import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.lines import Line2D
 
 
 COLUMNS = (
@@ -22,7 +23,8 @@ COLUMNS = (
 
 def plotnow(fname, xlabel, ylabel, x, y, labels, ptype="line",
             linestyles=[], markers=[], colors=[], ylim=[], xlim=[],
-            legend_fontsize=12, show_all_log_decades=False):
+            legend_fontsize=12, show_all_log_decades=False,
+            quantity_legend_labels=None, case_legend_labels=None):
     default_cycler = (
         cycler(color=["#0072B2", "#D55E00", "#009E73",
                       "#CC0000", "#990099"])*
@@ -73,7 +75,26 @@ def plotnow(fname, xlabel, ylabel, x, y, labels, ptype="line",
         ax.tick_params(axis="y", which="minor", length=3)
 
     ax.grid()
-    ax.legend(loc="best", fontsize=legend_fontsize)
+    if quantity_legend_labels is not None and case_legend_labels is not None:
+        number_cases = len(case_legend_labels)
+        quantity_handles = [
+            Line2D([0], [0], color=colors[index*number_cases],
+                   linestyle="-", linewidth=2.0, label=label)
+            for index, label in enumerate(quantity_legend_labels)
+        ]
+        case_handles = [
+            Line2D([0], [0], color="black", linestyle=linestyles[index],
+                   linewidth=2.0, label=label)
+            for index, label in enumerate(case_legend_labels)
+        ]
+        quantity_legend = ax.legend(
+            handles=quantity_handles, loc="upper left",
+            fontsize=legend_fontsize)
+        ax.add_artist(quantity_legend)
+        ax.legend(handles=case_handles, loc="upper right",
+                  fontsize=legend_fontsize)
+    else:
+        ax.legend(loc="best", fontsize=legend_fontsize)
     fig.savefig(fname + ".pdf", bbox_inches="tight", dpi=100)
     fig.savefig(fname + ".png", bbox_inches="tight", dpi=100)
     plt.close()
@@ -88,7 +109,7 @@ def arguments():
                                  "h2_p7/bubbly.dat"],
                         help="Input monitor files")
     parser.add_argument("--labels", nargs="+",
-                        default=["N=7", "N=9", "h/2, N=7"],
+                        default=["E,N7", "E,N9", "2E,N7"],
                         help="Labels corresponding to the input files")
     parser.add_argument("--output", default="bubblyPlots",
                         help="Output directory (default: bubblyPlots)")
@@ -129,6 +150,8 @@ def plot_bubbly(output_dir, datasets, case_labels):
     markers = [""]*len(datasets)
     palette = ["#0072B2", "#D55E00", "#009E73", "#CC0000",
                "#990099"]
+    case_colors = [palette[index % len(palette)]
+                   for index in range(len(datasets))]
 
     def field_colors(number_fields):
         return [palette[field % len(palette)]
@@ -150,31 +173,42 @@ def plot_bubbly(output_dir, datasets, case_labels):
             np.diff(average_times)
         )/(average_times[-1] - average_times[0])
 
-    def plot_field_with_late_means(filename, field, ylabel,
-                                   mean_start=20.0, ptype="line",
-                                   mean_format="%.2f"):
-        plot_labels = list(case_labels)
-
-        for index, (data, label) in enumerate(zip(datasets, case_labels)):
-            time_average = late_time_mean(data, field, mean_start)
-            if time_average is None:
-                continue
-
-            plot_labels[index] = (
-                r"%s, $t>20$ mean = %s" %
-                (label, mean_format % time_average))
-
+    def plot_field(filename, field, ylabel, ptype="line"):
         plotnow(
             os.path.join(output_dir, filename),
             r"$t$", ylabel,
             times,
             [data[field] for data in datasets],
-            plot_labels,
+            case_labels,
             linestyles=linestyles,
             markers=markers,
-            colors=field_colors(1),
+            colors=case_colors,
             ptype=ptype,
         )
+
+    mean_fields = (
+        ("area", "A"),
+        ("d32", "d32"),
+        ("surfaceEnergy", "SE"),
+        ("kL", "k_l"),
+        ("kG", "k_g"),
+        ("uLx", "<u_x>_l"),
+        ("uGx", "<u_x>_g"),
+        ("slipX", "u_r,x"),
+    )
+    mean_start = 50.0
+    print("Time-averaged bubbly-flow quantities for t > %g:" % mean_start)
+    for data, case_label in zip(datasets, case_labels):
+        entries = []
+        for field, terminal_label in mean_fields:
+            time_average = late_time_mean(data, field, mean_start)
+            if time_average is not None:
+                entries.append("%s=%.6g" % (terminal_label, time_average))
+        if entries:
+            print("  %s: %s" % (case_label, ", ".join(entries)))
+        else:
+            print("  %s: no samples extend beyond t=%g" %
+                  (case_label, mean_start))
 
     normalized_interface_thickness = []
     for data, label in zip(datasets, case_labels):
@@ -190,7 +224,7 @@ def plot_bubbly(output_dir, datasets, case_labels):
         r"$t$", r"$\alpha_g$",
         times, [data["alphaG"] for data in datasets],
         case_labels, linestyles=linestyles, markers=markers,
-        colors=field_colors(1),
+        colors=case_colors,
     )
 
     positive_error = [
@@ -201,53 +235,55 @@ def plot_bubbly(output_dir, datasets, case_labels):
         r"$t$", r"$|V_g-V_{g,0}|/V_{g,0}$",
         times, positive_error,
         case_labels, linestyles=linestyles, markers=markers,
-        colors=field_colors(1),
+        colors=case_colors,
         ptype="semilogy",
         show_all_log_decades=True,
     )
 
-    plot_field_with_late_means(
+    plot_field(
         "interfaceArea", "area", r"interface area $A$")
 
-    plot_field_with_late_means(
-        "sauterMeanDiameter", "d32", r"Sauter mean diameter $d_{32}$",
-        mean_format="%.3f")
+    plot_field(
+        "sauterMeanDiameter", "d32", r"Sauter mean diameter $d_{32}$")
 
     plotnow(
         os.path.join(output_dir, "interfaceThickness"),
         r"$t$", r"normalized interface thickness $\ell/\ell_0$",
         times, normalized_interface_thickness,
         case_labels, linestyles=linestyles, markers=markers,
-        colors=field_colors(1),
+        colors=case_colors,
     )
 
-    energy_fields = ("surfaceEnergy", "kL", "kG")
-    energy_field_labels = (r"$SE$", r"$k_l$", r"$k_g$")
-    energy_mean_labels = (r"$SE_{t>20}$", r"$k_{l,t>20}$",
-                          r"$k_{g,t>20}$")
-    energy_labels = []
-    for field, field_label, mean_label in zip(
-            energy_fields, energy_field_labels, energy_mean_labels):
-        for data, case_label in zip(datasets, case_labels):
-            time_average = late_time_mean(data, field, 20.0)
-            if time_average is not None:
-                label = r"%s = %.2e, %s" % (
-                    mean_label, time_average, case_label)
-            else:
-                label = "%s, %s" % (field_label, case_label)
-            energy_labels.append(label)
+    kinetic_energy_fields = ("kL", "kG")
+    kinetic_energy_labels = (r"$k_l$", r"$k_g$")
+    plotnow(
+        os.path.join(output_dir, "kineticEnergy"),
+        r"$t$", "kinetic energy",
+        [data["t"] for field in kinetic_energy_fields for data in datasets],
+        [data[field] for field in kinetic_energy_fields for data in datasets],
+        ["%s, %s" % (field_label, case_label)
+         for field_label in kinetic_energy_labels
+         for case_label in case_labels],
+        linestyles=linestyles*len(kinetic_energy_fields),
+        markers=markers*len(kinetic_energy_fields),
+        colors=field_colors(len(kinetic_energy_fields)),
+        ptype="semilogy",
+        legend_fontsize=12,
+        quantity_legend_labels=kinetic_energy_labels,
+        case_legend_labels=case_labels,
+    )
 
     plotnow(
-        os.path.join(output_dir, "energy"),
-        r"$t$", "energy",
-        [data["t"] for field in energy_fields for data in datasets],
-        [data[field] for field in energy_fields for data in datasets],
-        energy_labels,
-        linestyles=linestyles*len(energy_fields),
-        markers=markers*len(energy_fields),
-        colors=field_colors(len(energy_fields)),
+        os.path.join(output_dir, "surfaceEnergy"),
+        r"$t$", "surface energy",
+        times,
+        [data["surfaceEnergy"] for data in datasets],
+        case_labels,
+        linestyles=linestyles,
+        markers=markers,
+        colors=case_colors,
         ptype="semilogy",
-        legend_fontsize=9,
+        legend_fontsize=12,
     )
 
     phase_fields = ("uLx", "uGx")
@@ -263,10 +299,7 @@ def plot_bubbly(output_dir, datasets, case_labels):
         for data, case_label, linestyle in zip(
                 datasets, case_labels, linestyles):
             color = palette[field_index % len(palette)]
-            time_average = late_time_mean(data, field, 20.0)
             label = "%s, %s" % (field_label, case_label)
-            if time_average is not None:
-                label += r", $t>20$ mean = %.2f" % time_average
 
             phase_times.append(data["t"])
             phase_values.append(data[field])
@@ -283,6 +316,8 @@ def plot_bubbly(output_dir, datasets, case_labels):
         linestyles=phase_linestyles,
         markers=[""]*len(phase_times),
         colors=phase_colors,
+        quantity_legend_labels=phase_field_labels,
+        case_legend_labels=case_labels,
     )
 
     plotnow(
@@ -300,9 +335,14 @@ def plot_bubbly(output_dir, datasets, case_labels):
          for case_label in case_labels],
         linestyles=linestyles*4, markers=markers*4,
         colors=field_colors(4),
+        quantity_legend_labels=(r"$\langle u_y\rangle_l$",
+                                r"$\langle u_z\rangle_l$",
+                                r"$\langle u_y\rangle_g$",
+                                r"$\langle u_z\rangle_g$"),
+        case_legend_labels=case_labels,
     )
 
-    plot_field_with_late_means(
+    plot_field(
         "slipVelocityX", "slipX",
         r"streamwise slip velocity $u_{r,x}$")
 
@@ -318,6 +358,8 @@ def plot_bubbly(output_dir, datasets, case_labels):
          for case_label in case_labels],
         linestyles=linestyles*2, markers=markers*2,
         colors=field_colors(2),
+        quantity_legend_labels=(r"$u_{r,y}$", r"$u_{r,z}$"),
+        case_legend_labels=case_labels,
     )
 
 
