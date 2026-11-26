@@ -12,7 +12,7 @@
 
 // Set true to discard the restart's phase fields and regenerate TLS/CLS.
 // Velocity, pressure, and temperature still come from the restart.
-static const bool initializeBubbles = false;
+static const bool initializeBubbles = true;
 
 // ATH reference targets. The bubble diameter is d=0.3*delta, hence
 // d/(2*delta)=0.15 for the full-gap length used by Re, We, and Fr.
@@ -34,7 +34,7 @@ static const dfloat rhoCpRatio = 20.42604;
 
 static dfloat rhol, mul, rhog, mug;
 
-static const dfloat voidFraction = 0.03;
+static const dfloat voidFraction = 0.03; //0.08, 0.13, 0.18
 static const dfloat betam = 1.5;
 
 #include "postProcessing.inc"
@@ -72,8 +72,8 @@ void initializeBubbleFields()
                                                ymax,
                                                zmin,
                                                zmax,
-                                               2.0*bubbleRad,
-                                               bubbleRad);
+                                               0.25*bubbleRad,
+                                               0.25*bubbleRad);
   }
   MPI_Bcast(bubbleCoordinates.data(),
             3*numberBubbles,
